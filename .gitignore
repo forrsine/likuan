@@ -1,0 +1,10 @@
+build*/
+.cache/
+out/
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.user
+~$*.docx
+

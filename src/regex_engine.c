@@ -1,31 +1,14 @@
 #include "regex_engine.h"
 
-#include <limits.h>
+#include "ast.h"
+#include "charset.h"
+#include "parser.h"
+
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-typedef enum {
-    AST_EMPTY,
-    AST_CLASS,
-    AST_DOT,
-    AST_CONCAT,
-    AST_ALT,
-    AST_STAR,
-    AST_PLUS,
-    AST_QUESTION,
-    AST_ANCHOR_BEGIN,
-    AST_ANCHOR_END
-} ast_type_t;
-
-typedef struct ast_node {
-    ast_type_t type;
-    struct ast_node *left;
-    struct ast_node *right;
-    unsigned char cls[32];
-} ast_node_t;
 
 typedef enum {
     TR_EPS,
@@ -64,14 +47,9 @@ struct rx_regex {
     unsigned flags;
     char error[256];
     ast_node_t *ast;
+    size_t capture_count;
     nfa_t nfa;
 };
-
-typedef struct {
-    const char *pattern;
-    size_t pos;
-    char error[256];
-} parser_t;
 
 typedef struct {
     int start;
@@ -107,441 +85,6 @@ static char *rx_strdup(const char *s)
     }
     memcpy(copy, s, n);
     return copy;
-}
-
-static void cls_clear(unsigned char cls[32])
-{
-    memset(cls, 0, 32);
-}
-
-static void cls_add(unsigned char cls[32], unsigned char c)
-{
-    cls[c >> 3] |= (unsigned char)(1u << (c & 7u));
-}
-
-static bool cls_has(const unsigned char cls[32], unsigned char c)
-{
-    return (cls[c >> 3] & (unsigned char)(1u << (c & 7u))) != 0;
-}
-
-static void cls_add_range(unsigned char cls[32], unsigned char lo, unsigned char hi)
-{
-    if (lo > hi) {
-        unsigned char tmp = lo;
-        lo = hi;
-        hi = tmp;
-    }
-    for (unsigned int c = lo; c <= hi; ++c) {
-        cls_add(cls, (unsigned char)c);
-        if (c == UCHAR_MAX) {
-            break;
-        }
-    }
-}
-
-static void cls_invert(unsigned char cls[32])
-{
-    for (size_t i = 0; i < 32; ++i) {
-        cls[i] = (unsigned char)~cls[i];
-    }
-}
-
-static void cls_add_digit(unsigned char cls[32])
-{
-    cls_add_range(cls, '0', '9');
-}
-
-static void cls_add_word(unsigned char cls[32])
-{
-    cls_add_range(cls, 'a', 'z');
-    cls_add_range(cls, 'A', 'Z');
-    cls_add_range(cls, '0', '9');
-    cls_add(cls, '_');
-}
-
-static void cls_add_space(unsigned char cls[32])
-{
-    cls_add(cls, ' ');
-    cls_add(cls, '\t');
-    cls_add(cls, '\n');
-    cls_add(cls, '\r');
-    cls_add(cls, '\f');
-    cls_add(cls, '\v');
-}
-
-static ast_node_t *ast_new(ast_type_t type)
-{
-    ast_node_t *node = (ast_node_t *)calloc(1, sizeof(*node));
-    if (node != NULL) {
-        node->type = type;
-    }
-    return node;
-}
-
-static ast_node_t *ast_wrap(ast_type_t type, ast_node_t *child)
-{
-    ast_node_t *node = ast_new(type);
-    if (node == NULL) {
-        return NULL;
-    }
-    node->left = child;
-    return node;
-}
-
-static ast_node_t *ast_binary(ast_type_t type, ast_node_t *left, ast_node_t *right)
-{
-    ast_node_t *node = ast_new(type);
-    if (node == NULL) {
-        return NULL;
-    }
-    node->left = left;
-    node->right = right;
-    return node;
-}
-
-static void ast_free(ast_node_t *node)
-{
-    if (node == NULL) {
-        return;
-    }
-    ast_free(node->left);
-    ast_free(node->right);
-    free(node);
-}
-
-static int parser_peek(parser_t *p)
-{
-    return (unsigned char)p->pattern[p->pos];
-}
-
-static int parser_next(parser_t *p)
-{
-    unsigned char c = (unsigned char)p->pattern[p->pos];
-    if (c != '\0') {
-        p->pos++;
-    }
-    return c;
-}
-
-static bool parser_at_concat_end(parser_t *p)
-{
-    int c = parser_peek(p);
-    return c == '\0' || c == ')' || c == '|';
-}
-
-static ast_node_t *parse_expr(parser_t *p);
-
-static int parse_escape_char(parser_t *p, unsigned char cls[32])
-{
-    int c = parser_next(p);
-    if (c == '\0') {
-        set_error(p->error, sizeof(p->error), "pattern ends after escape at byte %zu", p->pos);
-        return RX_BADPAT;
-    }
-
-    cls_clear(cls);
-    switch (c) {
-    case 'd':
-        cls_add_digit(cls);
-        return RX_OK;
-    case 'w':
-        cls_add_word(cls);
-        return RX_OK;
-    case 's':
-        cls_add_space(cls);
-        return RX_OK;
-    case 'n':
-        cls_add(cls, '\n');
-        return RX_OK;
-    case 't':
-        cls_add(cls, '\t');
-        return RX_OK;
-    case 'r':
-        cls_add(cls, '\r');
-        return RX_OK;
-    default:
-        cls_add(cls, (unsigned char)c);
-        return RX_OK;
-    }
-}
-
-static int parse_class_char(parser_t *p, unsigned char *out)
-{
-    int c = parser_next(p);
-    if (c == '\0') {
-        set_error(p->error, sizeof(p->error), "unclosed character class");
-        return RX_EBRACK;
-    }
-    if (c != '\\') {
-        *out = (unsigned char)c;
-        return RX_OK;
-    }
-
-    unsigned char cls[32];
-    int rc = parse_escape_char(p, cls);
-    if (rc != RX_OK) {
-        return rc;
-    }
-    for (int i = 0; i < 256; ++i) {
-        if (cls_has(cls, (unsigned char)i)) {
-            *out = (unsigned char)i;
-            return RX_OK;
-        }
-    }
-    return RX_BADPAT;
-}
-
-static ast_node_t *parse_class(parser_t *p)
-{
-    parser_next(p);
-    bool negate = false;
-    bool saw_any = false;
-    unsigned char cls[32];
-    cls_clear(cls);
-
-    if (parser_peek(p) == '^') {
-        parser_next(p);
-        negate = true;
-    }
-
-    while (parser_peek(p) != '\0' && parser_peek(p) != ']') {
-        if (parser_peek(p) == '\\') {
-            parser_next(p);
-            unsigned char esc_cls[32];
-            int rc = parse_escape_char(p, esc_cls);
-            if (rc != RX_OK) {
-                return NULL;
-            }
-            for (int i = 0; i < 256; ++i) {
-                if (cls_has(esc_cls, (unsigned char)i)) {
-                    cls_add(cls, (unsigned char)i);
-                }
-            }
-            saw_any = true;
-            continue;
-        }
-
-        unsigned char first = 0;
-        int rc = parse_class_char(p, &first);
-        if (rc != RX_OK) {
-            return NULL;
-        }
-        if (parser_peek(p) == '-' && p->pattern[p->pos + 1] != ']' && p->pattern[p->pos + 1] != '\0') {
-            parser_next(p);
-            unsigned char last = 0;
-            rc = parse_class_char(p, &last);
-            if (rc != RX_OK) {
-                return NULL;
-            }
-            cls_add_range(cls, first, last);
-        } else {
-            cls_add(cls, first);
-        }
-        saw_any = true;
-    }
-
-    if (parser_peek(p) != ']') {
-        set_error(p->error, sizeof(p->error), "unclosed character class at byte %zu", p->pos);
-        return NULL;
-    }
-    parser_next(p);
-    if (!saw_any) {
-        set_error(p->error, sizeof(p->error), "empty character class is unsupported");
-        return NULL;
-    }
-    if (negate) {
-        cls_invert(cls);
-    }
-
-    ast_node_t *node = ast_new(AST_CLASS);
-    if (node == NULL) {
-        set_error(p->error, sizeof(p->error), "out of memory");
-        return NULL;
-    }
-    memcpy(node->cls, cls, sizeof(node->cls));
-    return node;
-}
-
-static ast_node_t *parse_atom(parser_t *p)
-{
-    int c = parser_peek(p);
-    if (c == '\0' || c == ')' || c == '|') {
-        ast_node_t *empty = ast_new(AST_EMPTY);
-        if (empty == NULL) {
-            set_error(p->error, sizeof(p->error), "out of memory");
-        }
-        return empty;
-    }
-
-    if (c == '(') {
-        parser_next(p);
-        ast_node_t *inside = parse_expr(p);
-        if (inside == NULL) {
-            return NULL;
-        }
-        if (parser_peek(p) != ')') {
-            ast_free(inside);
-            set_error(p->error, sizeof(p->error), "missing ')' at byte %zu", p->pos);
-            return NULL;
-        }
-        parser_next(p);
-        return inside;
-    }
-
-    if (c == '[') {
-        return parse_class(p);
-    }
-
-    parser_next(p);
-    ast_node_t *node = NULL;
-    if (c == '.') {
-        node = ast_new(AST_DOT);
-    } else if (c == '^') {
-        node = ast_new(AST_ANCHOR_BEGIN);
-    } else if (c == '$') {
-        node = ast_new(AST_ANCHOR_END);
-    } else if (c == '\\') {
-        unsigned char cls[32];
-        int rc = parse_escape_char(p, cls);
-        if (rc != RX_OK) {
-            return NULL;
-        }
-        node = ast_new(AST_CLASS);
-        if (node != NULL) {
-            memcpy(node->cls, cls, sizeof(node->cls));
-        }
-    } else if (c == '*' || c == '+' || c == '?' || c == '{') {
-        set_error(p->error, sizeof(p->error), "repetition operator '%c' has no operand at byte %zu", c, p->pos - 1);
-        return NULL;
-    } else {
-        node = ast_new(AST_CLASS);
-        if (node != NULL) {
-            cls_clear(node->cls);
-            cls_add(node->cls, (unsigned char)c);
-        }
-    }
-
-    if (node == NULL) {
-        set_error(p->error, sizeof(p->error), "out of memory");
-    }
-    return node;
-}
-
-static ast_node_t *parse_repeat(parser_t *p)
-{
-    ast_node_t *node = parse_atom(p);
-    if (node == NULL) {
-        return NULL;
-    }
-
-    for (;;) {
-        int c = parser_peek(p);
-        ast_type_t type;
-        if (c == '*') {
-            type = AST_STAR;
-        } else if (c == '+') {
-            type = AST_PLUS;
-        } else if (c == '?') {
-            type = AST_QUESTION;
-        } else if (c == '{') {
-            ast_free(node);
-            set_error(p->error, sizeof(p->error), "{m,n} repetition is planned but not implemented in this MVP");
-            return NULL;
-        } else {
-            return node;
-        }
-        parser_next(p);
-        ast_node_t *wrapped = ast_wrap(type, node);
-        if (wrapped == NULL) {
-            ast_free(node);
-            set_error(p->error, sizeof(p->error), "out of memory");
-            return NULL;
-        }
-        node = wrapped;
-    }
-}
-
-static ast_node_t *parse_concat(parser_t *p)
-{
-    ast_node_t *left = NULL;
-    while (!parser_at_concat_end(p)) {
-        ast_node_t *right = parse_repeat(p);
-        if (right == NULL) {
-            ast_free(left);
-            return NULL;
-        }
-        if (left == NULL) {
-            left = right;
-        } else {
-            ast_node_t *cat = ast_binary(AST_CONCAT, left, right);
-            if (cat == NULL) {
-                ast_free(left);
-                ast_free(right);
-                set_error(p->error, sizeof(p->error), "out of memory");
-                return NULL;
-            }
-            left = cat;
-        }
-    }
-
-    if (left == NULL) {
-        left = ast_new(AST_EMPTY);
-        if (left == NULL) {
-            set_error(p->error, sizeof(p->error), "out of memory");
-        }
-    }
-    return left;
-}
-
-static ast_node_t *parse_expr(parser_t *p)
-{
-    ast_node_t *left = parse_concat(p);
-    if (left == NULL) {
-        return NULL;
-    }
-
-    while (parser_peek(p) == '|') {
-        parser_next(p);
-        ast_node_t *right = parse_concat(p);
-        if (right == NULL) {
-            ast_free(left);
-            return NULL;
-        }
-        ast_node_t *alt = ast_binary(AST_ALT, left, right);
-        if (alt == NULL) {
-            ast_free(left);
-            ast_free(right);
-            set_error(p->error, sizeof(p->error), "out of memory");
-            return NULL;
-        }
-        left = alt;
-    }
-    return left;
-}
-
-static ast_node_t *parse_pattern(const char *pattern, char error[256])
-{
-    parser_t p;
-    p.pattern = pattern;
-    p.pos = 0;
-    p.error[0] = '\0';
-
-    ast_node_t *ast = parse_expr(&p);
-    if (ast == NULL) {
-        set_error(error, 256, "%s", p.error[0] ? p.error : "parse failed");
-        return NULL;
-    }
-    if (parser_peek(&p) == ')') {
-        ast_free(ast);
-        set_error(error, 256, "unmatched ')' at byte %zu", p.pos);
-        return NULL;
-    }
-    if (parser_peek(&p) != '\0') {
-        ast_free(ast);
-        set_error(error, 256, "unexpected character at byte %zu", p.pos);
-        return NULL;
-    }
-    return ast;
 }
 
 static void nfa_free(nfa_t *nfa)
@@ -604,6 +147,10 @@ static int compile_ast(nfa_t *nfa, const ast_node_t *node, frag_t *out)
 {
     if (node == NULL) {
         return RX_BADPAT;
+    }
+
+    if (node->type == AST_GROUP) {
+        return compile_ast(nfa, node->left, out);
     }
 
     if (node->type == AST_CONCAT || node->type == AST_ALT) {
@@ -697,6 +244,90 @@ static int compile_ast(nfa_t *nfa, const ast_node_t *node, frag_t *out)
         return RX_OK;
     }
 
+    if (node->type == AST_REPEAT) {
+        frag_t result = {0, 0};
+        bool have_result = false;
+        int rc = RX_OK;
+
+        for (size_t i = 0; i < node->repeat_min; ++i) {
+            frag_t part;
+            rc = compile_ast(nfa, node->left, &part);
+            if (rc != RX_OK) {
+                return rc;
+            }
+            if (!have_result) {
+                result = part;
+                have_result = true;
+            } else {
+                rc = nfa_add_eps(nfa, result.accept, part.start);
+                if (rc != RX_OK) {
+                    return rc;
+                }
+                result.accept = part.accept;
+            }
+        }
+
+        size_t optional_count = node->repeat_unbounded ? 0 : node->repeat_max - node->repeat_min;
+        for (size_t i = 0; i < optional_count; ++i) {
+            ast_node_t optional = {0};
+            optional.type = AST_QUESTION;
+            optional.left = node->left;
+            frag_t part;
+            rc = compile_ast(nfa, &optional, &part);
+            if (rc != RX_OK) {
+                return rc;
+            }
+            if (!have_result) {
+                result = part;
+                have_result = true;
+            } else {
+                rc = nfa_add_eps(nfa, result.accept, part.start);
+                if (rc != RX_OK) {
+                    return rc;
+                }
+                result.accept = part.accept;
+            }
+        }
+
+        if (node->repeat_unbounded) {
+            ast_node_t tail = {0};
+            tail.type = AST_STAR;
+            tail.left = node->left;
+            frag_t part;
+            rc = compile_ast(nfa, &tail, &part);
+            if (rc != RX_OK) {
+                return rc;
+            }
+            if (!have_result) {
+                result = part;
+                have_result = true;
+            } else {
+                rc = nfa_add_eps(nfa, result.accept, part.start);
+                if (rc != RX_OK) {
+                    return rc;
+                }
+                result.accept = part.accept;
+            }
+        }
+
+        if (!have_result) {
+            int s = nfa_add_state(nfa);
+            int e = nfa_add_state(nfa);
+            if (s < 0 || e < 0) {
+                return RX_ESPACE;
+            }
+            rc = nfa_add_eps(nfa, s, e);
+            if (rc != RX_OK) {
+                return rc;
+            }
+            result.start = s;
+            result.accept = e;
+        }
+
+        *out = result;
+        return RX_OK;
+    }
+
     int s = nfa_add_state(nfa);
     int e = nfa_add_state(nfa);
     if (s < 0 || e < 0) {
@@ -782,23 +413,28 @@ static void set_clear(state_set_t *set)
 
 static bool add_closure(const nfa_t *nfa, state_set_t *set, int state, size_t pos, size_t text_len)
 {
+    size_t first_new = set->len;
     if (!set_push(set, state)) {
         return false;
     }
+    if (set->len == first_new) {
+        return true;
+    }
 
-    const transition_vec_t *vec = &nfa->states[state].trans;
-    for (size_t i = 0; i < vec->len; ++i) {
-        const transition_t *tr = &vec->items[i];
-        bool can_take = false;
-        if (tr->type == TR_EPS) {
-            can_take = true;
-        } else if (tr->type == TR_ANCHOR_BEGIN) {
-            can_take = pos == 0;
-        } else if (tr->type == TR_ANCHOR_END) {
-            can_take = pos == text_len;
-        }
-        if (can_take && !set->seen[tr->to]) {
-            if (!add_closure(nfa, set, tr->to, pos, text_len)) {
+    for (size_t pending = first_new; pending < set->len; ++pending) {
+        int current = set->items[pending];
+        const transition_vec_t *vec = &nfa->states[current].trans;
+        for (size_t i = 0; i < vec->len; ++i) {
+            const transition_t *tr = &vec->items[i];
+            bool can_take = false;
+            if (tr->type == TR_EPS) {
+                can_take = true;
+            } else if (tr->type == TR_ANCHOR_BEGIN) {
+                can_take = pos == 0;
+            } else if (tr->type == TR_ANCHOR_END) {
+                can_take = pos == text_len;
+            }
+            if (can_take && !set_push(set, tr->to)) {
                 return false;
             }
         }
@@ -817,7 +453,7 @@ static bool trans_matches(const transition_t *tr, unsigned char c)
         return true;
     }
     if (tr->type == TR_CLASS) {
-        return cls_has(tr->cls, c);
+        return rx_charset_has(tr->cls, c);
     }
     return false;
 }
@@ -826,8 +462,8 @@ static int nfa_run_from(const rx_regex_t *re, const char *text, size_t start, si
 {
     const nfa_t *nfa = &re->nfa;
     size_t text_len = strlen(text);
-    state_set_t cur;
-    state_set_t next;
+    state_set_t cur = {0};
+    state_set_t next = {0};
 
     if (!set_init(&cur, nfa->len) || !set_init(&next, nfa->len)) {
         set_free(&cur);
@@ -910,10 +546,11 @@ int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags)
         return RX_ESPACE;
     }
 
-    re->ast = parse_pattern(pattern, re->error);
+    int parse_status = RX_BADPAT;
+    re->ast = rx_parse_pattern(pattern, re->error, &parse_status, &re->capture_count);
     if (re->ast == NULL) {
         regex_free(re);
-        return RX_BADPAT;
+        return parse_status;
     }
 
     frag_t frag;
@@ -1036,4 +673,3 @@ void regex_free(rx_regex_t *re)
     nfa_free(&re->nfa);
     free(re);
 }
-

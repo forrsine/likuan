@@ -1,6 +1,5 @@
 #include "ast.h"
 
-#include <ctype.h>
 #include <stdlib.h>
 
 ast_node_t *ast_new(ast_type_t type)
@@ -48,48 +47,6 @@ static void dump_indent(FILE *out, size_t depth)
     }
 }
 
-static void dump_char(FILE *out, unsigned char c)
-{
-    switch (c) {
-    case '\n': fputs("\\n", out); return;
-    case '\r': fputs("\\r", out); return;
-    case '\t': fputs("\\t", out); return;
-    case '\\': fputs("\\\\", out); return;
-    case ']': fputs("\\]", out); return;
-    case '-': fputs("\\-", out); return;
-    default:
-        if (isprint(c)) {
-            fputc(c, out);
-        } else {
-            fprintf(out, "\\x%02X", (unsigned)c);
-        }
-    }
-}
-
-static void dump_class(FILE *out, const unsigned char cls[RX_CHARSET_BYTES])
-{
-    fputc('[', out);
-    for (unsigned int i = 0; i < 256;) {
-        if (!rx_charset_has(cls, (unsigned char)i)) {
-            ++i;
-            continue;
-        }
-        unsigned int end = i;
-        while (end + 1 < 256 && rx_charset_has(cls, (unsigned char)(end + 1))) {
-            ++end;
-        }
-        dump_char(out, (unsigned char)i);
-        if (end >= i + 2) {
-            fputc('-', out);
-            dump_char(out, (unsigned char)end);
-        } else if (end == i + 1) {
-            dump_char(out, (unsigned char)end);
-        }
-        i = end + 1;
-    }
-    fputc(']', out);
-}
-
 static void dump_node(const ast_node_t *node, FILE *out, size_t depth)
 {
     dump_indent(out, depth);
@@ -97,7 +54,7 @@ static void dump_node(const ast_node_t *node, FILE *out, size_t depth)
     case AST_EMPTY: fputs("EMPTY\n", out); return;
     case AST_CLASS:
         fputs("CLASS ", out);
-        dump_class(out, node->cls);
+        rx_charset_dump(node->cls, out);
         fputc('\n', out);
         return;
     case AST_DOT: fputs("DOT\n", out); return;

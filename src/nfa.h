@@ -4,6 +4,7 @@
 #include "charset.h"
 
 #include <stddef.h>
+#include <stdio.h>
 
 struct ast_node;
 
@@ -51,5 +52,8 @@ int nfa_add_transition(nfa_t *nfa, int from, int to, trans_type_t type,
                        const unsigned char cls[RX_CHARSET_BYTES]);
 int nfa_add_eps(nfa_t *nfa, int from, int to);
 int nfa_compile_ast(nfa_t *nfa, const struct ast_node *node, frag_t *out);
+size_t nfa_transition_count(const nfa_t *nfa);
+const char *nfa_transition_type_name(trans_type_t type);
+int nfa_dump_table(const nfa_t *nfa, FILE *out);
 
 #endif

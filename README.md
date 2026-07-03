@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-已完成工程骨架、解析前端、AST 输出、最小 NFA 匹配闭环和区间量词：
+已完成工程骨架、解析前端、AST 输出、Thompson NFA、状态转移表和 NFA 匹配闭环：
 
 - C17 + CMake 项目结构
 - 对外 API：`regex_compile`、`regex_compile_ex`、`regex_match`、`regex_search`、`regex_findall`、`regex_free`
@@ -12,14 +12,9 @@
 - 区间量词采用 Thompson NFA 展开，重复次数上限为 10000，防止异常模式消耗过多内存
 - 编译期检查非法重复、倒置字符范围和不合法的范围端点
 - `regex_compile_ex` 返回带字节位置的详细错误，括号嵌套上限为 256
-- 独立模块：`charset`、`lexer`、`parser`、`ast`，捕获组在 AST 中保留编号
-- 单元测试：`test_lexer`、`test_parser`、`test_api`
-<<<<<<< HEAD
-- 命令行工具：`rx_cli`、`rx_dump_tokens`、`rx_dump_ast`
-=======
-- 命令行工具：`rx_cli`、`rx_dump_ast`
-- 拆分 `src/regex_engine.c` 中剩余的 NFA 与 matcher 逻辑
->>>>>>> 903e39b65b66f0a5504ab80442f79e6d3033a3b3
+- 独立模块：`charset`、`lexer`、`parser`、`ast`、`nfa`、`matcher`，捕获组在 AST 中保留编号
+- 单元测试：`test_lexer`、`test_parser`、`test_nfa`、`test_api`
+- 命令行工具：`rx_cli`、`rx_dump_tokens`、`rx_dump_ast`、`rx_dump_nfa`
 
 ## 构建与测试
 
@@ -40,6 +35,7 @@ ctest --test-dir build --output-on-failure
 ./build/rx_cli "[a-z]+\\d+" "abc123"
 ./build/rx_dump_tokens "([a-z]+)\\d{2,4}"
 ./build/rx_dump_ast "([a-z]+)\\d{2,4}"
+./build/rx_dump_nfa "a|b"
 ```
 
 Windows 原生环境可安装 Visual Studio 2022 Build Tools（勾选“使用 C++ 的桌面开发”）和 CMake，然后在 Developer PowerShell 中执行：
@@ -52,8 +48,6 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ## 下一阶段
 
-
-- 实现 NFA 状态转移表输出
 - 增加捕获组位置返回
-- 实现 NFA/DFA 状态表和 DOT 导出
+- 实现 DFA 状态表和 DOT 导出
 - 实现子集构造、DFA 执行和 Hopcroft 最小化

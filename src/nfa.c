@@ -290,3 +290,84 @@ int nfa_compile_ast(nfa_t *nfa, const ast_node_t *node, frag_t *out)
     out->accept = e;
     return RX_OK;
 }
+
+size_t nfa_transition_count(const nfa_t *nfa)
+{
+    if (nfa == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < nfa->len; ++i) {
+        count += nfa->states[i].trans.len;
+    }
+    return count;
+}
+
+const char *nfa_transition_type_name(trans_type_t type)
+{
+    switch (type) {
+    case TR_EPS: return "EPS";
+    case TR_CLASS: return "CLASS";
+    case TR_ANY: return "ANY";
+    case TR_ANCHOR_BEGIN: return "BEGIN";
+    case TR_ANCHOR_END: return "END";
+    }
+    return "UNKNOWN";
+}
+
+static const char *state_role(const nfa_t *nfa, int state)
+{
+    if (state == nfa->start && state == nfa->accept) {
+        return "start+accept";
+    }
+    if (state == nfa->start) {
+        return "start";
+    }
+    if (state == nfa->accept) {
+        return "accept";
+    }
+    return "-";
+}
+
+static void dump_transition_value(const transition_t *transition, FILE *out)
+{
+    switch (transition->type) {
+    case TR_EPS: fputs("eps", out); break;
+    case TR_CLASS: rx_charset_dump(transition->cls, out); break;
+    case TR_ANY: fputc('.', out); break;
+    case TR_ANCHOR_BEGIN: fputc('^', out); break;
+    case TR_ANCHOR_END: fputc('$', out); break;
+    }
+}
+
+int nfa_dump_table(const nfa_t *nfa, FILE *out)
+{
+    if (nfa == NULL || out == NULL || nfa->start < 0 || nfa->accept < 0) {
+        return -1;
+    }
+
+    fprintf(out, "NFA states=%zu transitions=%zu start=%d accept=%d\n",
+            nfa->len, nfa_transition_count(nfa), nfa->start, nfa->accept);
+    fputs("STATE  ROLE          TYPE    VALUE             TO\n", out);
+    fputs("-----  ------------  ------  ----------------  -----\n", out);
+    for (size_t state = 0; state < nfa->len; ++state) {
+        const transition_vec_t *transitions = &nfa->states[state].trans;
+        if (transitions->len == 0) {
+            fprintf(out, "%-5zu  %-12s  %-6s  %-16s  %s\n",
+                    state, state_role(nfa, (int)state), "-", "-", "-");
+            continue;
+        }
+        for (size_t i = 0; i < transitions->len; ++i) {
+            const transition_t *transition = &transitions->items[i];
+            if (i == 0) {
+                fprintf(out, "%-5zu  %-12s  %-6s  ", state, state_role(nfa, (int)state),
+                        nfa_transition_type_name(transition->type));
+            } else {
+                fprintf(out, "%-5s  %-12s  %-6s  ", "", "", nfa_transition_type_name(transition->type));
+            }
+            dump_transition_value(transition, out);
+            fprintf(out, "%*s%d\n", 18, "", transition->to);
+        }
+    }
+    return ferror(out) ? -1 : 0;
+}

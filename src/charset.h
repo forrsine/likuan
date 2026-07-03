@@ -2,6 +2,7 @@
 #define RX_CHARSET_H
 
 #include <stdbool.h>
+#include <stdio.h>
 
 #define RX_CHARSET_BYTES 32
 
@@ -13,5 +14,6 @@ void rx_charset_invert(unsigned char cls[RX_CHARSET_BYTES]);
 void rx_charset_add_digit(unsigned char cls[RX_CHARSET_BYTES]);
 void rx_charset_add_word(unsigned char cls[RX_CHARSET_BYTES]);
 void rx_charset_add_space(unsigned char cls[RX_CHARSET_BYTES]);
+int rx_charset_dump(const unsigned char cls[RX_CHARSET_BYTES], FILE *out);
 
 #endif

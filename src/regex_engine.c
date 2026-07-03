@@ -1,46 +1,14 @@
 #include "regex_engine.h"
 
 #include "ast.h"
-#include "charset.h"
+#include "matcher.h"
+#include "nfa.h"
 #include "parser.h"
 
 #include <stdarg.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-typedef enum {
-    TR_EPS,
-    TR_CLASS,
-    TR_ANY,
-    TR_ANCHOR_BEGIN,
-    TR_ANCHOR_END
-} trans_type_t;
-
-typedef struct {
-    int to;
-    trans_type_t type;
-    unsigned char cls[32];
-} transition_t;
-
-typedef struct {
-    transition_t *items;
-    size_t len;
-    size_t cap;
-} transition_vec_t;
-
-typedef struct {
-    transition_vec_t trans;
-} nfa_state_t;
-
-typedef struct {
-    nfa_state_t *states;
-    size_t len;
-    size_t cap;
-    int start;
-    int accept;
-} nfa_t;
 
 struct rx_regex {
     char *pattern;
@@ -50,19 +18,6 @@ struct rx_regex {
     size_t capture_count;
     nfa_t nfa;
 };
-
-typedef struct {
-    int start;
-    int accept;
-} frag_t;
-
-typedef struct {
-    int *items;
-    size_t len;
-    size_t cap;
-    unsigned char *seen;
-    size_t seen_len;
-} state_set_t;
 
 static void set_error(char *dst, size_t dst_len, const char *fmt, ...)
 {
@@ -87,6 +42,7 @@ static char *rx_strdup(const char *s)
     return copy;
 }
 
+<<<<<<< HEAD
 static void nfa_free(nfa_t *nfa)
 {
     if (nfa == NULL) {
@@ -531,6 +487,9 @@ int regex_compile_ex(rx_regex_t **out,
                      unsigned flags,
                      char *error,
                      size_t error_size)
+=======
+int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags)
+>>>>>>> 903e39b65b66f0a5504ab80442f79e6d3033a3b3
 {
     if (error != NULL && error_size > 0) {
         error[0] = '\0';
@@ -551,8 +510,7 @@ int regex_compile_ex(rx_regex_t **out,
         return RX_ESPACE;
     }
     re->flags = flags;
-    re->nfa.start = -1;
-    re->nfa.accept = -1;
+    nfa_init(&re->nfa);
     re->pattern = rx_strdup(pattern);
     if (re->pattern == NULL) {
         set_error(error, error_size, "out of memory");
@@ -569,7 +527,7 @@ int regex_compile_ex(rx_regex_t **out,
     }
 
     frag_t frag;
-    int rc = compile_ast(&re->nfa, re->ast, &frag);
+    int rc = nfa_compile_ast(&re->nfa, re->ast, &frag);
     if (rc != RX_OK) {
         set_error(re->error, sizeof(re->error), "failed to build NFA");
         set_error(error, error_size, "%s", re->error);
@@ -594,7 +552,7 @@ int regex_match(const rx_regex_t *re, const char *text, rx_match_t *matches, siz
         return RX_BADPAT;
     }
     size_t end = 0;
-    int rc = nfa_run_from(re, text, 0, &end);
+    int rc = nfa_run_from(&re->nfa, text, 0, &end);
     if (rc != RX_OK) {
         return rc;
     }
@@ -616,7 +574,7 @@ int regex_search(const rx_regex_t *re, const char *text, rx_match_t *matches, si
     size_t len = strlen(text);
     for (size_t start = 0; start <= len; ++start) {
         size_t end = 0;
-        int rc = nfa_run_from(re, text, start, &end);
+        int rc = nfa_run_from(&re->nfa, text, start, &end);
         if (rc == RX_OK) {
             if (matches != NULL && nmatch > 0) {
                 matches[0].rm_so = (int)start;
@@ -648,7 +606,7 @@ int regex_findall(const rx_regex_t *re,
 
         for (size_t probe = start; probe <= len; ++probe) {
             size_t end = 0;
-            int rc = nfa_run_from(re, text, probe, &end);
+            int rc = nfa_run_from(&re->nfa, text, probe, &end);
             if (rc == RX_OK) {
                 m.rm_so = (int)probe;
                 m.rm_eo = (int)end;

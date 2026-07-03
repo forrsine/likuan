@@ -10,6 +10,8 @@ add_library(regex_engine
     src/ast.c
     src/lexer.c
     src/parser.c
+    src/nfa.c
+    src/matcher.c
     src/regex_engine.c
 )
 target_include_directories(regex_engine PUBLIC include)

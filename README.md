@@ -14,7 +14,12 @@
 - `regex_compile_ex` 返回带字节位置的详细错误，括号嵌套上限为 256
 - 独立模块：`charset`、`lexer`、`parser`、`ast`，捕获组在 AST 中保留编号
 - 单元测试：`test_lexer`、`test_parser`、`test_api`
+<<<<<<< HEAD
 - 命令行工具：`rx_cli`、`rx_dump_tokens`、`rx_dump_ast`
+=======
+- 命令行工具：`rx_cli`、`rx_dump_ast`
+- 拆分 `src/regex_engine.c` 中剩余的 NFA 与 matcher 逻辑
+>>>>>>> 903e39b65b66f0a5504ab80442f79e6d3033a3b3
 
 ## 构建与测试
 
@@ -47,7 +52,7 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ## 下一阶段
 
-- 拆分 `src/regex_engine.c` 中剩余的 NFA 与 matcher 逻辑
+
 - 实现 NFA 状态转移表输出
 - 增加捕获组位置返回
 - 实现 NFA/DFA 状态表和 DOT 导出

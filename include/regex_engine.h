@@ -31,6 +31,11 @@ enum {
 };
 
 int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags);
+int regex_compile_ex(rx_regex_t **out,
+                     const char *pattern,
+                     unsigned flags,
+                     char *error,
+                     size_t error_size);
 int regex_match(const rx_regex_t *re, const char *text, rx_match_t *matches, size_t nmatch);
 int regex_search(const rx_regex_t *re, const char *text, rx_match_t *matches, size_t nmatch);
 int regex_findall(const rx_regex_t *re,
@@ -38,6 +43,7 @@ int regex_findall(const rx_regex_t *re,
                   int (*on_match)(const rx_match_t *matches, size_t nmatch, void *userdata),
                   void *userdata);
 const char *regex_error(const rx_regex_t *re);
+const char *regex_status_string(int status);
 void regex_free(rx_regex_t *re);
 
 #ifdef __cplusplus
@@ -45,4 +51,3 @@ void regex_free(rx_regex_t *re);
 #endif
 
 #endif
-

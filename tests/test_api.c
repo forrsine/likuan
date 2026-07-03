@@ -1,6 +1,7 @@
 #include "regex_engine.h"
 
 #include <stdio.h>
+#include <string.h>
 
 static int failures = 0;
 
@@ -71,6 +72,21 @@ static void expect_compile_error(const char *pattern)
         failures++;
         regex_free(re);
     }
+}
+
+static void expect_compile_error_detail(const char *pattern,
+                                        unsigned flags,
+                                        int expected_status,
+                                        const char *expected_text)
+{
+    rx_regex_t *re = NULL;
+    char error[256];
+    int rc = regex_compile_ex(&re, pattern, flags, error, sizeof(error));
+    if (rc != expected_status || re != NULL || strstr(error, expected_text) == NULL) {
+        printf("FAIL compile detail /%s/: rc=%d error='%s'\n", pattern, rc, error);
+        failures++;
+    }
+    regex_free(re);
 }
 
 typedef struct {
@@ -178,6 +194,16 @@ int main(void)
     expect_compile_error("a{2}?");
     expect_compile_error("[z-a]");
     expect_compile_error("[a-\\d]");
+    expect_compile_error_detail("(abc", RX_FLAG_NONE, RX_EPAREN, "byte 0");
+    expect_compile_error_detail("[abc", RX_FLAG_NONE, RX_EBRACK, "byte 0");
+    expect_compile_error_detail("a{2", RX_FLAG_NONE, RX_EBRACE, "byte 1");
+    expect_compile_error_detail("a{3,2}", RX_FLAG_NONE, RX_BADRPT, "byte 1");
+    expect_compile_error_detail("a**", RX_FLAG_NONE, RX_BADRPT, "byte 2");
+    expect_compile_error_detail("abc", 1u, RX_EUNSUPPORTED, "flags");
+    if (strcmp(regex_status_string(RX_BADRPT), "invalid repetition operator") != 0) {
+        printf("FAIL status string\n");
+        failures++;
+    }
 
     if (failures != 0) {
         printf("%d test(s) failed\n", failures);

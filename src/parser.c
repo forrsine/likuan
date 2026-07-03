@@ -12,6 +12,7 @@ typedef struct {
     char error[RX_ERROR_SIZE];
     int status;
     size_t next_group;
+    size_t group_depth;
 } parser_t;
 
 static void parser_error(parser_t *parser, int status, const char *fmt, ...)
@@ -65,19 +66,30 @@ static ast_node_t *parse_atom(parser_t *parser)
     }
 
     if (token.type == TOK_LPAREN) {
+        if (parser->group_depth >= RX_MAX_GROUP_DEPTH) {
+            parser_error(parser, RX_EUNSUPPORTED,
+                         "group nesting exceeds limit %u at byte %zu",
+                         RX_MAX_GROUP_DEPTH, token.pos);
+            return NULL;
+        }
         size_t group_id = parser->next_group++;
+        ++parser->group_depth;
         if (!parser_advance(parser)) {
+            --parser->group_depth;
             return NULL;
         }
         ast_node_t *inside = parse_expr(parser);
         if (inside == NULL) {
+            --parser->group_depth;
             return NULL;
         }
         if (parser->current.type != TOK_RPAREN) {
+            --parser->group_depth;
             ast_free(inside);
             parser_error(parser, RX_EPAREN, "missing ')' for group opened at byte %zu", token.pos);
             return NULL;
         }
+        --parser->group_depth;
         if (!parser_advance(parser)) {
             ast_free(inside);
             return NULL;

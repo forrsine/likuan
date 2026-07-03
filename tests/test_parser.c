@@ -106,6 +106,29 @@ static void expect_error(const char *pattern, int expected_status, const char *e
     ast_free(ast);
 }
 
+static void test_group_depth_limit(void)
+{
+    char pattern[RX_MAX_GROUP_DEPTH * 2 + 4];
+    size_t depth = RX_MAX_GROUP_DEPTH + 1;
+    for (size_t i = 0; i < depth; ++i) {
+        pattern[i] = '(';
+    }
+    pattern[depth] = 'a';
+    for (size_t i = 0; i < depth; ++i) {
+        pattern[depth + 1 + i] = ')';
+    }
+    pattern[depth * 2 + 1] = '\0';
+
+    char error[RX_ERROR_SIZE];
+    int status = RX_OK;
+    ast_node_t *ast = rx_parse_pattern(pattern, error, &status, NULL);
+    if (ast != NULL || status != RX_EUNSUPPORTED || strstr(error, "exceeds limit") == NULL) {
+        printf("FAIL group depth: status=%d error='%s'\n", status, error);
+        ++failures;
+    }
+    ast_free(ast);
+}
+
 int main(void)
 {
     test_precedence_and_groups();
@@ -113,6 +136,7 @@ int main(void)
     expect_error("(abc", RX_EPAREN, "byte 0");
     expect_error("a**", RX_BADRPT, "byte 2");
     expect_error("[abc", RX_EBRACK, "byte 0");
+    test_group_depth_limit();
     if (failures != 0) {
         printf("%d parser test(s) failed\n", failures);
         return 1;

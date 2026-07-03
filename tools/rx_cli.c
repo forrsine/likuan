@@ -10,9 +10,11 @@ int main(int argc, char **argv)
     }
 
     rx_regex_t *re = NULL;
-    int rc = regex_compile(&re, argv[1], RX_FLAG_NONE);
+    char error[256];
+    int rc = regex_compile_ex(&re, argv[1], RX_FLAG_NONE, error, sizeof(error));
     if (rc != RX_OK) {
-        fprintf(stderr, "compile failed: rc=%d\n", rc);
+        fprintf(stderr, "compile failed: %s (rc=%d: %s)\n",
+                error, rc, regex_status_string(rc));
         return 1;
     }
 
@@ -33,4 +35,3 @@ int main(int argc, char **argv)
     regex_free(re);
     return rc == RX_OK || rc == RX_NOMATCH ? 0 : 1;
 }
-

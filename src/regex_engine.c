@@ -66,7 +66,7 @@ typedef struct {
 
 static void set_error(char *dst, size_t dst_len, const char *fmt, ...)
 {
-    if (dst_len == 0) {
+    if (dst == NULL || dst_len == 0) {
         return;
     }
     va_list ap;
@@ -526,15 +526,28 @@ static int nfa_run_from(const rx_regex_t *re, const char *text, size_t start, si
     return RX_OK;
 }
 
-int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags)
+int regex_compile_ex(rx_regex_t **out,
+                     const char *pattern,
+                     unsigned flags,
+                     char *error,
+                     size_t error_size)
 {
+    if (error != NULL && error_size > 0) {
+        error[0] = '\0';
+    }
     if (out == NULL || pattern == NULL) {
+        set_error(error, error_size, "output pointer and pattern must not be null");
         return RX_BADPAT;
     }
     *out = NULL;
+    if (flags != RX_FLAG_NONE) {
+        set_error(error, error_size, "unsupported compile flags: 0x%X", flags);
+        return RX_EUNSUPPORTED;
+    }
 
     rx_regex_t *re = (rx_regex_t *)calloc(1, sizeof(*re));
     if (re == NULL) {
+        set_error(error, error_size, "out of memory");
         return RX_ESPACE;
     }
     re->flags = flags;
@@ -542,6 +555,7 @@ int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags)
     re->nfa.accept = -1;
     re->pattern = rx_strdup(pattern);
     if (re->pattern == NULL) {
+        set_error(error, error_size, "out of memory");
         regex_free(re);
         return RX_ESPACE;
     }
@@ -549,6 +563,7 @@ int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags)
     int parse_status = RX_BADPAT;
     re->ast = rx_parse_pattern(pattern, re->error, &parse_status, &re->capture_count);
     if (re->ast == NULL) {
+        set_error(error, error_size, "%s", re->error);
         regex_free(re);
         return parse_status;
     }
@@ -557,6 +572,7 @@ int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags)
     int rc = compile_ast(&re->nfa, re->ast, &frag);
     if (rc != RX_OK) {
         set_error(re->error, sizeof(re->error), "failed to build NFA");
+        set_error(error, error_size, "%s", re->error);
         regex_free(re);
         return rc;
     }
@@ -565,6 +581,11 @@ int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags)
 
     *out = re;
     return RX_OK;
+}
+
+int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags)
+{
+    return regex_compile_ex(out, pattern, flags, NULL, 0);
 }
 
 int regex_match(const rx_regex_t *re, const char *text, rx_match_t *matches, size_t nmatch)
@@ -661,6 +682,22 @@ const char *regex_error(const rx_regex_t *re)
         return "no regex object";
     }
     return re->error[0] ? re->error : "no error";
+}
+
+const char *regex_status_string(int status)
+{
+    switch (status) {
+    case RX_OK: return "success";
+    case RX_NOMATCH: return "no match";
+    case RX_BADPAT: return "invalid pattern";
+    case RX_EPAREN: return "unbalanced parentheses";
+    case RX_EBRACK: return "invalid character class";
+    case RX_EBRACE: return "invalid repetition braces";
+    case RX_BADRPT: return "invalid repetition operator";
+    case RX_ESPACE: return "out of memory";
+    case RX_EUNSUPPORTED: return "unsupported feature or limit exceeded";
+    default: return "unknown regex status";
+    }
 }
 
 void regex_free(rx_regex_t *re)

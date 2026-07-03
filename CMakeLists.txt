@@ -52,3 +52,8 @@ add_executable(rx_dump_ast tools/rx_dump_ast.c)
 target_include_directories(rx_dump_ast PRIVATE src)
 target_link_libraries(rx_dump_ast PRIVATE regex_engine)
 rx_enable_warnings(rx_dump_ast)
+
+add_executable(rx_dump_tokens tools/rx_dump_tokens.c)
+target_include_directories(rx_dump_tokens PRIVATE src)
+target_link_libraries(rx_dump_tokens PRIVATE regex_engine)
+rx_enable_warnings(rx_dump_tokens)

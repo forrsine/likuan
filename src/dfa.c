@@ -30,6 +30,9 @@ void dfa_init(dfa_t *dfa)
 {
     memset(dfa, 0, sizeof(*dfa));
     dfa->start = -1;
+    for (size_t i = 0; i < RX_DFA_CONTEXT_COUNT; ++i) {
+        dfa->start_states[i] = -1;
+    }
 }
 
 void dfa_free(dfa_t *dfa)
@@ -46,14 +49,16 @@ void dfa_free(dfa_t *dfa)
 
 bool dfa_can_build(const nfa_t *nfa)
 {
-    if (nfa == NULL) {
+    if (nfa == NULL || nfa->len == 0 || nfa->start < 0 || nfa->accept < 0 ||
+        (size_t)nfa->start >= nfa->len || (size_t)nfa->accept >= nfa->len) {
         return false;
     }
     for (size_t state = 0; state < nfa->len; ++state) {
         const transition_vec_t *transitions = &nfa->states[state].trans;
         for (size_t i = 0; i < transitions->len; ++i) {
-            trans_type_t type = transitions->items[i].type;
-            if (type == TR_ANCHOR_BEGIN || type == TR_ANCHOR_END) {
+            const transition_t *transition = &transitions->items[i];
+            if (transition->to < 0 || (size_t)transition->to >= nfa->len ||
+                transition->type < TR_EPS || transition->type > TR_ANCHOR_END) {
                 return false;
             }
         }
@@ -61,7 +66,10 @@ bool dfa_can_build(const nfa_t *nfa)
     return true;
 }
 
-static int epsilon_closure(const nfa_t *nfa, unsigned char *set)
+static int epsilon_closure(const nfa_t *nfa,
+                           unsigned char *set,
+                           bool at_begin,
+                           bool at_end)
 {
     int *queue = (int *)malloc(nfa->len * sizeof(*queue));
     if (queue == NULL) {
@@ -81,7 +89,10 @@ static int epsilon_closure(const nfa_t *nfa, unsigned char *set)
         const transition_vec_t *transitions = &nfa->states[state].trans;
         for (size_t i = 0; i < transitions->len; ++i) {
             const transition_t *transition = &transitions->items[i];
-            if (transition->type == TR_EPS && !bitset_has(set, (size_t)transition->to)) {
+            bool can_take = transition->type == TR_EPS ||
+                            (transition->type == TR_ANCHOR_BEGIN && at_begin) ||
+                            (transition->type == TR_ANCHOR_END && at_end);
+            if (can_take && !bitset_has(set, (size_t)transition->to)) {
                 bitset_add(set, (size_t)transition->to);
                 queue[tail++] = transition->to;
             }
@@ -95,6 +106,7 @@ static int epsilon_closure(const nfa_t *nfa, unsigned char *set)
 static int move_and_close(const nfa_t *nfa,
                           const unsigned char *source,
                           unsigned char byte,
+                          bool at_end,
                           unsigned char *target,
                           size_t set_bytes)
 {
@@ -115,7 +127,42 @@ static int move_and_close(const nfa_t *nfa,
     if (bitset_empty(target, set_bytes)) {
         return RX_OK;
     }
-    return epsilon_closure(nfa, target);
+    return epsilon_closure(nfa, target, false, at_end);
+}
+
+static bool bytes_equivalent(const nfa_t *nfa, unsigned char left, unsigned char right)
+{
+    for (size_t state = 0; state < nfa->len; ++state) {
+        const transition_vec_t *transitions = &nfa->states[state].trans;
+        for (size_t i = 0; i < transitions->len; ++i) {
+            const transition_t *transition = &transitions->items[i];
+            if (transition->type == TR_CLASS &&
+                rx_charset_has(transition->cls, left) !=
+                    rx_charset_has(transition->cls, right)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static void build_character_classes(dfa_t *dfa, const nfa_t *nfa)
+{
+    dfa->class_count = 0;
+    for (unsigned int byte = 0; byte < RX_DFA_ALPHABET_SIZE; ++byte) {
+        size_t cls = 0;
+        while (cls < dfa->class_count &&
+               !bytes_equivalent(nfa,
+                                 (unsigned char)byte,
+                                 dfa->class_representative[cls])) {
+            ++cls;
+        }
+        if (cls == dfa->class_count) {
+            dfa->class_representative[cls] = (unsigned char)byte;
+            ++dfa->class_count;
+        }
+        dfa->class_of[byte] = (unsigned short)cls;
+    }
 }
 
 static int dfa_find_state(const dfa_t *dfa, const unsigned char *set)
@@ -152,21 +199,59 @@ static int dfa_add_state(dfa_t *dfa, const nfa_t *nfa, const unsigned char *set)
     memcpy(state->nfa_set, set, dfa->set_bytes);
     for (size_t i = 0; i < RX_DFA_ALPHABET_SIZE; ++i) {
         state->transitions[i] = -1;
+        state->final_transitions[i] = -1;
     }
     state->is_accept = bitset_has(set, (size_t)nfa->accept);
     return (int)dfa->len++;
 }
 
+static int dfa_resolve_state(dfa_t *dfa,
+                             const nfa_t *nfa,
+                             const unsigned char *set,
+                             int *state_out)
+{
+    if (bitset_empty(set, dfa->set_bytes)) {
+        *state_out = -1;
+        return RX_OK;
+    }
+
+    int state = dfa_find_state(dfa, set);
+    if (state < 0) {
+        state = dfa_add_state(dfa, nfa, set);
+        if (state < 0) {
+            return state == -2 ? RX_EUNSUPPORTED : RX_ESPACE;
+        }
+    }
+    *state_out = state;
+    return RX_OK;
+}
+
+static void set_class_transition(dfa_t *dfa,
+                                 size_t state,
+                                 size_t cls,
+                                 int target,
+                                 bool at_end)
+{
+    for (size_t byte = 0; byte < RX_DFA_ALPHABET_SIZE; ++byte) {
+        if (dfa->class_of[byte] == cls) {
+            if (at_end) {
+                dfa->states[state].final_transitions[byte] = target;
+            } else {
+                dfa->states[state].transitions[byte] = target;
+            }
+        }
+    }
+}
+
 int dfa_build(dfa_t *dfa, const nfa_t *nfa)
 {
-    if (dfa == NULL || nfa == NULL || nfa->len == 0 || nfa->start < 0 || nfa->accept < 0) {
+    if (dfa == NULL || !dfa_can_build(nfa)) {
         return RX_BADPAT;
-    }
-    if (!dfa_can_build(nfa)) {
-        return RX_EUNSUPPORTED;
     }
 
     dfa->set_bytes = (nfa->len + 7u) / 8u;
+    build_character_classes(dfa, nfa);
+
     unsigned char *start_set = (unsigned char *)calloc(dfa->set_bytes, 1);
     unsigned char *target_set = (unsigned char *)malloc(dfa->set_bytes);
     if (start_set == NULL || target_set == NULL) {
@@ -175,49 +260,65 @@ int dfa_build(dfa_t *dfa, const nfa_t *nfa)
         return RX_ESPACE;
     }
 
-    bitset_add(start_set, (size_t)nfa->start);
-    int rc = epsilon_closure(nfa, start_set);
-    if (rc != RX_OK) {
-        free(start_set);
-        free(target_set);
-        return rc;
+    int rc = RX_OK;
+    for (size_t context = 0; context < RX_DFA_CONTEXT_COUNT; ++context) {
+        memset(start_set, 0, dfa->set_bytes);
+        bitset_add(start_set, (size_t)nfa->start);
+        rc = epsilon_closure(nfa,
+                             start_set,
+                             (context & DFA_CONTEXT_BEGIN) != 0,
+                             (context & DFA_CONTEXT_END) != 0);
+        if (rc != RX_OK) {
+            goto done;
+        }
+        rc = dfa_resolve_state(dfa, nfa, start_set, &dfa->start_states[context]);
+        if (rc != RX_OK) {
+            goto done;
+        }
     }
-    int start = dfa_add_state(dfa, nfa, start_set);
-    if (start < 0) {
-        free(start_set);
-        free(target_set);
-        return start == -2 ? RX_EUNSUPPORTED : RX_ESPACE;
-    }
-    dfa->start = start;
+    dfa->start = dfa->start_states[DFA_CONTEXT_BEGIN];
 
     for (size_t current = 0; current < dfa->len; ++current) {
-        for (unsigned int byte = 0; byte < RX_DFA_ALPHABET_SIZE; ++byte) {
-            const unsigned char *source = dfa->states[current].nfa_set;
-            rc = move_and_close(nfa, source, (unsigned char)byte, target_set, dfa->set_bytes);
+        for (size_t cls = 0; cls < dfa->class_count; ++cls) {
+            unsigned char byte = dfa->class_representative[cls];
+            int target = -1;
+
+            rc = move_and_close(nfa,
+                                dfa->states[current].nfa_set,
+                                byte,
+                                false,
+                                target_set,
+                                dfa->set_bytes);
             if (rc != RX_OK) {
-                free(start_set);
-                free(target_set);
-                return rc;
+                goto done;
             }
-            if (bitset_empty(target_set, dfa->set_bytes)) {
-                continue;
+            rc = dfa_resolve_state(dfa, nfa, target_set, &target);
+            if (rc != RX_OK) {
+                goto done;
             }
-            int target = dfa_find_state(dfa, target_set);
-            if (target < 0) {
-                target = dfa_add_state(dfa, nfa, target_set);
-                if (target < 0) {
-                    free(start_set);
-                    free(target_set);
-                    return target == -2 ? RX_EUNSUPPORTED : RX_ESPACE;
-                }
+            set_class_transition(dfa, current, cls, target, false);
+
+            rc = move_and_close(nfa,
+                                dfa->states[current].nfa_set,
+                                byte,
+                                true,
+                                target_set,
+                                dfa->set_bytes);
+            if (rc != RX_OK) {
+                goto done;
             }
-            dfa->states[current].transitions[byte] = target;
+            rc = dfa_resolve_state(dfa, nfa, target_set, &target);
+            if (rc != RX_OK) {
+                goto done;
+            }
+            set_class_transition(dfa, current, cls, target, true);
         }
     }
 
+done:
     free(start_set);
     free(target_set);
-    return RX_OK;
+    return rc;
 }
 
 int dfa_run_from(const dfa_t *dfa, const char *text, size_t start, size_t *end_out)
@@ -227,12 +328,20 @@ int dfa_run_from(const dfa_t *dfa, const char *text, size_t start, size_t *end_o
     }
 
     size_t text_len = strlen(text);
-    int state = dfa->start;
+    if (start > text_len) {
+        return RX_NOMATCH;
+    }
+    size_t context = (start == 0 ? DFA_CONTEXT_BEGIN : DFA_CONTEXT_MID) |
+                     (start == text_len ? DFA_CONTEXT_END : DFA_CONTEXT_MID);
+    int state = dfa->start_states[context];
     bool found = dfa->states[state].is_accept;
     size_t best = start;
 
     for (size_t pos = start; pos < text_len; ++pos) {
-        int next = dfa->states[state].transitions[(unsigned char)text[pos]];
+        unsigned char byte = (unsigned char)text[pos];
+        int next = pos + 1 == text_len
+                       ? dfa->states[state].final_transitions[byte]
+                       : dfa->states[state].transitions[byte];
         if (next < 0) {
             break;
         }
@@ -265,12 +374,39 @@ size_t dfa_transition_count(const dfa_t *dfa)
     return count;
 }
 
+size_t dfa_final_override_count(const dfa_t *dfa)
+{
+    if (dfa == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t state = 0; state < dfa->len; ++state) {
+        for (size_t byte = 0; byte < RX_DFA_ALPHABET_SIZE; ++byte) {
+            if (dfa->states[state].final_transitions[byte] !=
+                dfa->states[state].transitions[byte]) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
+static bool dfa_is_start_state(const dfa_t *dfa, size_t state)
+{
+    for (size_t context = 0; context < RX_DFA_CONTEXT_COUNT; ++context) {
+        if (dfa->start_states[context] == (int)state) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static const char *dfa_state_role(const dfa_t *dfa, size_t state)
 {
-    if ((int)state == dfa->start && dfa->states[state].is_accept) {
+    if (dfa_is_start_state(dfa, state) && dfa->states[state].is_accept) {
         return "start+accept";
     }
-    if ((int)state == dfa->start) {
+    if (dfa_is_start_state(dfa, state)) {
         return "start";
     }
     if (dfa->states[state].is_accept) {
@@ -279,43 +415,77 @@ static const char *dfa_state_role(const dfa_t *dfa, size_t state)
     return "-";
 }
 
+static bool target_has_bytes(const dfa_state_t *state,
+                             size_t target,
+                             bool final_only,
+                             unsigned char cls[RX_CHARSET_BYTES])
+{
+    rx_charset_clear(cls);
+    bool found = false;
+    for (size_t byte = 0; byte < RX_DFA_ALPHABET_SIZE; ++byte) {
+        int actual = final_only ? state->final_transitions[byte] : state->transitions[byte];
+        if (actual == (int)target &&
+            (!final_only || actual != state->transitions[byte])) {
+            rx_charset_add(cls, (unsigned char)byte);
+            found = true;
+        }
+    }
+    return found;
+}
+
 int dfa_dump_table(const dfa_t *dfa, FILE *out)
 {
     if (dfa == NULL || out == NULL || dfa->start < 0) {
         return -1;
     }
 
-    fprintf(out, "DFA states=%zu byte_transitions=%zu start=%d\n",
-            dfa->len, dfa_transition_count(dfa), dfa->start);
-    fputs("STATE  ROLE          INPUT               TO\n", out);
-    fputs("-----  ------------  ------------------  -----\n", out);
+    fprintf(out,
+            "DFA states=%zu byte_transitions=%zu classes=%zu final_overrides=%zu start=%d\n",
+            dfa->len,
+            dfa_transition_count(dfa),
+            dfa->class_count,
+            dfa_final_override_count(dfa),
+            dfa->start);
+    fprintf(out,
+            "START contexts: mid=%d begin=%d end=%d begin+end=%d\n",
+            dfa->start_states[DFA_CONTEXT_MID],
+            dfa->start_states[DFA_CONTEXT_BEGIN],
+            dfa->start_states[DFA_CONTEXT_END],
+            dfa->start_states[DFA_CONTEXT_BEGIN_END]);
+    fputs("STATE  ROLE          CONTEXT  INPUT               TO\n", out);
+    fputs("-----  ------------  -------  ------------------  -----\n", out);
     for (size_t state = 0; state < dfa->len; ++state) {
         bool wrote = false;
+        unsigned char cls[RX_CHARSET_BYTES];
         for (size_t target = 0; target < dfa->len; ++target) {
-            unsigned char cls[RX_CHARSET_BYTES];
-            rx_charset_clear(cls);
-            bool has_target = false;
-            for (size_t byte = 0; byte < RX_DFA_ALPHABET_SIZE; ++byte) {
-                if (dfa->states[state].transitions[byte] == (int)target) {
-                    rx_charset_add(cls, (unsigned char)byte);
-                    has_target = true;
-                }
-            }
-            if (!has_target) {
+            if (!target_has_bytes(&dfa->states[state], target, false, cls)) {
                 continue;
             }
             if (!wrote) {
-                fprintf(out, "%-5zu  %-12s  ", state, dfa_state_role(dfa, state));
+                fprintf(out, "%-5zu  %-12s  %-7s  ", state, dfa_state_role(dfa, state), "NORMAL");
             } else {
-                fprintf(out, "%-5s  %-12s  ", "", "");
+                fprintf(out, "%-5s  %-12s  %-7s  ", "", "", "NORMAL");
+            }
+            rx_charset_dump(cls, out);
+            fprintf(out, "%*s%zu\n", 20, "", target);
+            wrote = true;
+        }
+        for (size_t target = 0; target < dfa->len; ++target) {
+            if (!target_has_bytes(&dfa->states[state], target, true, cls)) {
+                continue;
+            }
+            if (!wrote) {
+                fprintf(out, "%-5zu  %-12s  %-7s  ", state, dfa_state_role(dfa, state), "FINAL");
+            } else {
+                fprintf(out, "%-5s  %-12s  %-7s  ", "", "", "FINAL");
             }
             rx_charset_dump(cls, out);
             fprintf(out, "%*s%zu\n", 20, "", target);
             wrote = true;
         }
         if (!wrote) {
-            fprintf(out, "%-5zu  %-12s  %-18s  %s\n",
-                    state, dfa_state_role(dfa, state), "-", "-");
+            fprintf(out, "%-5zu  %-12s  %-7s  %-18s  %s\n",
+                    state, dfa_state_role(dfa, state), "-", "-", "-");
         }
     }
     return ferror(out) ? -1 : 0;

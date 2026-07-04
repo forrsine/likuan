@@ -52,6 +52,8 @@ static void test_subset_shapes(void)
     if (build_dfa("a|b", &nfa, &dfa) == RX_OK) {
         check(dfa.len == 3, "alternate DFA state count");
         check(dfa_transition_count(&dfa) == 2, "alternate DFA transition count");
+        check(dfa.class_count == 3, "alternate character class count");
+        check(dfa_final_override_count(&dfa) == 0, "alternate has no final overrides");
         check(!dfa.states[dfa.start].is_accept, "alternate start is not accepting");
         dfa_free(&dfa);
         nfa_free(&nfa);
@@ -60,6 +62,7 @@ static void test_subset_shapes(void)
     if (build_dfa("a*", &nfa, &dfa) == RX_OK) {
         check(dfa.len == 2, "star DFA state count before minimization");
         check(dfa_transition_count(&dfa) == 2, "star DFA transition count");
+        check(dfa.class_count == 2, "star character class count");
         check(dfa.states[dfa.start].is_accept, "star start is accepting");
         dfa_free(&dfa);
         nfa_free(&nfa);
@@ -68,6 +71,13 @@ static void test_subset_shapes(void)
     if (build_dfa("[a-c]+", &nfa, &dfa) == RX_OK) {
         check(dfa.len == 2, "class plus DFA state count");
         check(dfa_transition_count(&dfa) == 6, "class plus byte transition count");
+        check(dfa.class_count == 2, "range character class count");
+        dfa_free(&dfa);
+        nfa_free(&nfa);
+    }
+
+    if (build_dfa("([a-z]+)\\d{2,4}", &nfa, &dfa) == RX_OK) {
+        check(dfa.class_count == 3, "letters and digits character class count");
         dfa_free(&dfa);
         nfa_free(&nfa);
     }
@@ -88,28 +98,43 @@ static void test_dfa_execution(void)
     }
 }
 
-static void test_anchor_rejection(void)
+static void test_anchor_support(void)
 {
-    char error[RX_ERROR_SIZE];
-    int status = RX_BADPAT;
-    ast_node_t *ast = rx_parse_pattern("^a$", error, &status, NULL);
     nfa_t nfa;
-    nfa_init(&nfa);
     dfa_t dfa;
-    dfa_init(&dfa);
-    if (ast != NULL) {
-        frag_t fragment;
-        int rc = nfa_compile_ast(&nfa, ast, &fragment);
-        if (rc == RX_OK) {
-            nfa.start = fragment.start;
-            nfa.accept = fragment.accept;
-            check(!dfa_can_build(&nfa), "DFA detects anchors");
-            check(dfa_build(&dfa, &nfa) == RX_EUNSUPPORTED, "DFA rejects anchors explicitly");
-        }
+    size_t end = 0;
+
+    if (build_dfa("^a$", &nfa, &dfa) == RX_OK) {
+        check(dfa_can_build(&nfa), "DFA accepts anchored NFA");
+        check(dfa_run_from(&dfa, "a", 0, &end) == RX_OK && end == 1,
+              "begin and end anchors match complete text");
+        check(dfa_run_from(&dfa, "za", 1, &end) == RX_NOMATCH,
+              "begin anchor rejects nonzero start");
+        check(dfa_run_from(&dfa, "ab", 0, &end) == RX_NOMATCH,
+              "end anchor rejects non-final position");
+        check(dfa_final_override_count(&dfa) > 0,
+              "end anchor creates final-context transitions");
+        dfa_free(&dfa);
+        nfa_free(&nfa);
     }
-    ast_free(ast);
-    dfa_free(&dfa);
-    nfa_free(&nfa);
+
+    if (build_dfa("^$", &nfa, &dfa) == RX_OK) {
+        check(dfa_run_from(&dfa, "", 0, &end) == RX_OK && end == 0,
+              "anchors match empty text");
+        check(dfa_run_from(&dfa, "x", 0, &end) == RX_NOMATCH,
+              "empty anchored pattern rejects nonempty text");
+        dfa_free(&dfa);
+        nfa_free(&nfa);
+    }
+
+    if (build_dfa("a$", &nfa, &dfa) == RX_OK) {
+        check(dfa_run_from(&dfa, "za", 1, &end) == RX_OK && end == 2,
+              "end anchor works from search offset");
+        check(dfa_run_from(&dfa, "zab", 1, &end) == RX_NOMATCH,
+              "end anchor requires text end");
+        dfa_free(&dfa);
+        nfa_free(&nfa);
+    }
 }
 
 static void test_dfa_table(void)
@@ -137,6 +162,8 @@ static void test_dfa_table(void)
         size_t size = fread(buffer, 1, sizeof(buffer) - 1, file);
         buffer[size] = '\0';
         check(strstr(buffer, "states=3 byte_transitions=2") != NULL, "DFA table summary");
+        check(strstr(buffer, "classes=3 final_overrides=0") != NULL,
+              "DFA table compression summary");
         check(strstr(buffer, "start") != NULL && strstr(buffer, "accept") != NULL,
               "DFA table roles");
         check(strstr(buffer, "[a]") != NULL && strstr(buffer, "[b]") != NULL,
@@ -153,7 +180,7 @@ static void test_nfa_dfa_equivalence(void)
 {
     const char *patterns[] = {
         "a", "a|b", "ab*", "(ab|c)+", "[a-c]{1,3}",
-        "\\d+\\w?", "a*", "a|aa", "[^x]+"
+        "\\d+\\w?", "a*", "a|aa", "[^x]+", "^a$", "a$", "^$", "(^a|b$)"
     };
     const char *texts[] = {
         "", "a", "b", "aa", "abbb", "cc", "123a", "xyz", "cab", "abab"
@@ -209,7 +236,7 @@ int main(void)
 {
     test_subset_shapes();
     test_dfa_execution();
-    test_anchor_rejection();
+    test_anchor_support();
     test_dfa_table();
     test_nfa_dfa_equivalence();
     if (failures != 0) {

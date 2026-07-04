@@ -98,13 +98,6 @@ int regex_compile_ex(rx_regex_t **out,
     re->nfa.accept = frag.accept;
 
     if ((flags & RX_FLAG_DFA) != 0) {
-        if (!dfa_can_build(&re->nfa)) {
-            set_error(re->error, sizeof(re->error),
-                      "DFA mode does not yet support '^' or '$' anchors");
-            set_error(error, error_size, "%s", re->error);
-            regex_free(re);
-            return RX_EUNSUPPORTED;
-        }
         rc = dfa_build(&re->dfa, &re->nfa);
         if (rc != RX_OK) {
             if (rc == RX_EUNSUPPORTED) {

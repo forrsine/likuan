@@ -88,6 +88,25 @@ static void expect_dfa_result(const char *pattern,
     regex_free(re);
 }
 
+static void expect_dfa_no_result(const char *pattern, const char *text, int search)
+{
+    rx_regex_t *re = NULL;
+    int rc = regex_compile(&re, pattern, RX_FLAG_DFA);
+    if (rc != RX_OK) {
+        printf("FAIL DFA compile /%s/: rc=%d\n", pattern, rc);
+        failures++;
+        return;
+    }
+
+    rc = search ? regex_search(re, text, NULL, 0) : regex_match(re, text, NULL, 0);
+    if (rc != RX_NOMATCH) {
+        printf("FAIL DFA expected no %s /%s/ text='%s': rc=%d\n",
+               search ? "search" : "match", pattern, text, rc);
+        failures++;
+    }
+    regex_free(re);
+}
+
 static void expect_compile_error(const char *pattern)
 {
     rx_regex_t *re = NULL;
@@ -201,6 +220,12 @@ int main(void)
     expect_search("a*", "bbb", 0, 0);
     expect_dfa_result("a{2,4}", "aaa", 0, 0, 3);
     expect_dfa_result("a+", "zzaaa", 1, 2, 5);
+    expect_dfa_result("^abc$", "abc", 0, 0, 3);
+    expect_dfa_result("abc$", "zzabc", 1, 2, 5);
+    expect_dfa_result("^$", "", 0, 0, 0);
+    expect_dfa_no_result("^abc$", "zabc", 0);
+    expect_dfa_no_result("^abc", "zabc", 1);
+    expect_dfa_no_result("abc$", "abcx", 1);
     {
         const rx_match_t expected[] = {{0, 2}, {3, 5}};
         expect_findall("a{2}", "aabaa", expected, 2, RX_FLAG_NONE);
@@ -231,7 +256,6 @@ int main(void)
     expect_compile_error_detail("a{2", RX_FLAG_NONE, RX_EBRACE, "byte 1");
     expect_compile_error_detail("a{3,2}", RX_FLAG_NONE, RX_BADRPT, "byte 1");
     expect_compile_error_detail("a**", RX_FLAG_NONE, RX_BADRPT, "byte 2");
-    expect_compile_error_detail("^abc$", RX_FLAG_DFA, RX_EUNSUPPORTED, "anchors");
     expect_compile_error_detail("abc", 2u, RX_EUNSUPPORTED, "flags");
     if (strcmp(regex_status_string(RX_BADRPT), "invalid repetition operator") != 0) {
         printf("FAIL status string\n");

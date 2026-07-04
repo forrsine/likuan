@@ -318,6 +318,9 @@ int dfa_build(dfa_t *dfa, const nfa_t *nfa)
 done:
     free(start_set);
     free(target_set);
+    if (rc == RX_OK) {
+        dfa->subset_state_count = dfa->len;
+    }
     return rc;
 }
 
@@ -440,8 +443,10 @@ int dfa_dump_table(const dfa_t *dfa, FILE *out)
     }
 
     fprintf(out,
-            "DFA states=%zu byte_transitions=%zu classes=%zu final_overrides=%zu start=%d\n",
+            "DFA states=%zu subset_states=%zu byte_transitions=%zu classes=%zu "
+            "final_overrides=%zu start=%d\n",
             dfa->len,
+            dfa->subset_state_count,
             dfa_transition_count(dfa),
             dfa->class_count,
             dfa_final_override_count(dfa),

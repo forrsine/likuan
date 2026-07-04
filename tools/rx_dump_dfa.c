@@ -37,6 +37,9 @@ int main(int argc, char **argv)
         rc = dfa_build(&dfa, &nfa);
     }
     if (rc == RX_OK) {
+        rc = dfa_minimize(&dfa);
+    }
+    if (rc == RX_OK) {
         printf("pattern=%s\n", argv[1]);
         rc = dfa_dump_table(&dfa, stdout) == 0 ? RX_OK : RX_BADPAT;
     } else {

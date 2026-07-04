@@ -98,6 +98,51 @@ static void test_dfa_execution(void)
     }
 }
 
+static void test_hopcroft_minimization(void)
+{
+    nfa_t nfa;
+    dfa_t dfa;
+    size_t end = 0;
+
+    if (build_dfa("a|b", &nfa, &dfa) == RX_OK) {
+        check(dfa.len == 3, "alternate state count before minimization");
+        check(dfa_minimize(&dfa) == RX_OK, "alternate minimization succeeds");
+        check(dfa.len == 2, "alternate equivalent accept states merge");
+        check(dfa.subset_state_count == 3, "alternate subset state count retained");
+        check(dfa_run_from(&dfa, "a", 0, &end) == RX_OK && end == 1,
+              "minimized alternate matches a");
+        check(dfa_run_from(&dfa, "b", 0, &end) == RX_OK && end == 1,
+              "minimized alternate matches b");
+        check(dfa_minimize(&dfa) == RX_OK && dfa.len == 2,
+              "repeated minimization is stable");
+        dfa_free(&dfa);
+        nfa_free(&nfa);
+    }
+
+    if (build_dfa("a*", &nfa, &dfa) == RX_OK) {
+        check(dfa_minimize(&dfa) == RX_OK, "star minimization succeeds");
+        check(dfa.len == 1, "star accepting states merge");
+        check(dfa_run_from(&dfa, "aaaa", 0, &end) == RX_OK && end == 4,
+              "minimized star keeps longest match");
+        dfa_free(&dfa);
+        nfa_free(&nfa);
+    }
+
+    if (build_dfa("^a$", &nfa, &dfa) == RX_OK) {
+        size_t before = dfa.len;
+        check(dfa_minimize(&dfa) == RX_OK, "anchored minimization succeeds");
+        check(dfa.len < before, "anchored dead states merge");
+        check(dfa_run_from(&dfa, "a", 0, &end) == RX_OK && end == 1,
+              "minimized anchors match complete text");
+        check(dfa_run_from(&dfa, "za", 1, &end) == RX_NOMATCH,
+              "minimized begin anchor rejects offset");
+        check(dfa_run_from(&dfa, "ab", 0, &end) == RX_NOMATCH,
+              "minimized end anchor rejects early match");
+        dfa_free(&dfa);
+        nfa_free(&nfa);
+    }
+}
+
 static void test_anchor_support(void)
 {
     nfa_t nfa;
@@ -144,6 +189,13 @@ static void test_dfa_table(void)
     if (build_dfa("a|b", &nfa, &dfa) != RX_OK) {
         return;
     }
+    if (dfa_minimize(&dfa) != RX_OK) {
+        printf("FAIL DFA table minimization\n");
+        ++failures;
+        dfa_free(&dfa);
+        nfa_free(&nfa);
+        return;
+    }
 
     FILE *file = NULL;
 #ifdef _MSC_VER
@@ -161,13 +213,13 @@ static void test_dfa_table(void)
         rewind(file);
         size_t size = fread(buffer, 1, sizeof(buffer) - 1, file);
         buffer[size] = '\0';
-        check(strstr(buffer, "states=3 byte_transitions=2") != NULL, "DFA table summary");
+        check(strstr(buffer, "states=2 subset_states=3 byte_transitions=2") != NULL,
+              "DFA table minimization summary");
         check(strstr(buffer, "classes=3 final_overrides=0") != NULL,
               "DFA table compression summary");
         check(strstr(buffer, "start") != NULL && strstr(buffer, "accept") != NULL,
               "DFA table roles");
-        check(strstr(buffer, "[a]") != NULL && strstr(buffer, "[b]") != NULL,
-              "DFA table inputs");
+        check(strstr(buffer, "[ab]") != NULL, "DFA table merged inputs");
     }
     if (file != NULL) {
         fclose(file);
@@ -236,6 +288,7 @@ int main(void)
 {
     test_subset_shapes();
     test_dfa_execution();
+    test_hopcroft_minimization();
     test_anchor_support();
     test_dfa_table();
     test_nfa_dfa_equivalence();

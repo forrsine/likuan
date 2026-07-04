@@ -99,12 +99,16 @@ int regex_compile_ex(rx_regex_t **out,
 
     if ((flags & RX_FLAG_DFA) != 0) {
         rc = dfa_build(&re->dfa, &re->nfa);
+        if (rc == RX_OK) {
+            rc = dfa_minimize(&re->dfa);
+        }
         if (rc != RX_OK) {
             if (rc == RX_EUNSUPPORTED) {
                 set_error(re->error, sizeof(re->error),
                           "failed to build DFA (state limit %u)", RX_DFA_STATE_LIMIT);
             } else {
-                set_error(re->error, sizeof(re->error), "out of memory while building DFA");
+                set_error(re->error, sizeof(re->error),
+                          "out of memory while building or minimizing DFA");
             }
             set_error(error, error_size, "%s", re->error);
             regex_free(re);

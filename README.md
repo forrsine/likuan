@@ -4,7 +4,7 @@
 
 ## 当前进度
 
-已完成工程骨架、解析前端、Thompson NFA、子集构造 DFA、状态转移表和 NFA/DFA 双模式匹配：
+已完成工程骨架、解析前端、Thompson NFA、子集构造 DFA、Hopcroft 最小化、状态转移表和 NFA/DFA 双模式匹配：
 
 - C17 + CMake 项目结构
 - 对外 API：`regex_compile`、`regex_compile_ex`、`regex_match`、`regex_search`、`regex_findall`、`regex_free`
@@ -15,7 +15,8 @@
 - `RX_FLAG_DFA` 可选择 DFA 执行器，默认仍使用 NFA
 - DFA 状态上限为 4096，NFA/DFA 两种模式均支持 `^`、`$` 锚点
 - DFA 构造使用字符等价类压缩，仅对行为不同的字符代表执行 move + closure
-- 独立模块：`charset`、`lexer`、`parser`、`ast`、`nfa`、`matcher`、`dfa`
+- Hopcroft 分区细化同时处理普通转移和文本末尾转移，DFA 编译后自动最小化
+- 独立模块：`charset`、`lexer`、`parser`、`ast`、`nfa`、`matcher`、`dfa`、`dfa_minimize`
 - 单元测试：`test_lexer`、`test_parser`、`test_nfa`、`test_dfa`、`test_api`
 - 命令行工具：`rx_cli`、`rx_dump_tokens`、`rx_dump_ast`、`rx_dump_nfa`、`rx_dump_dfa`
 
@@ -54,6 +55,5 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ## 下一阶段
 
-- 实现 Hopcroft 最小化
 - 增加捕获组位置返回
 - 实现 NFA/DFA DOT 导出

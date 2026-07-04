@@ -30,6 +30,7 @@ typedef struct {
     size_t len;
     size_t cap;
     size_t set_bytes;
+    size_t subset_state_count;
     int start;
     int start_states[RX_DFA_CONTEXT_COUNT];
     unsigned short class_of[RX_DFA_ALPHABET_SIZE];
@@ -41,6 +42,7 @@ void dfa_init(dfa_t *dfa);
 void dfa_free(dfa_t *dfa);
 bool dfa_can_build(const nfa_t *nfa);
 int dfa_build(dfa_t *dfa, const nfa_t *nfa);
+int dfa_minimize(dfa_t *dfa);
 int dfa_run_from(const dfa_t *dfa, const char *text, size_t start, size_t *end_out);
 size_t dfa_transition_count(const dfa_t *dfa);
 size_t dfa_final_override_count(const dfa_t *dfa);

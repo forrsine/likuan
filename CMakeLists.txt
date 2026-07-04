@@ -13,6 +13,7 @@ add_library(regex_engine
     src/nfa.c
     src/matcher.c
     src/dfa.c
+    src/dfa_minimize.c
     src/regex_engine.c
 )
 target_include_directories(regex_engine PUBLIC include)

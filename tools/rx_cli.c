@@ -1,17 +1,23 @@
 #include "regex_engine.h"
 
 #include <stdio.h>
+#include <string.h>
 
 int main(int argc, char **argv)
 {
-    if (argc != 3) {
-        fprintf(stderr, "usage: %s PATTERN TEXT\n", argv[0]);
+    unsigned flags = RX_FLAG_NONE;
+    int pattern_arg = 1;
+    if (argc == 4 && strcmp(argv[1], "--dfa") == 0) {
+        flags = RX_FLAG_DFA;
+        pattern_arg = 2;
+    } else if (argc != 3) {
+        fprintf(stderr, "usage: %s [--dfa] PATTERN TEXT\n", argv[0]);
         return 2;
     }
 
     rx_regex_t *re = NULL;
     char error[256];
-    int rc = regex_compile_ex(&re, argv[1], RX_FLAG_NONE, error, sizeof(error));
+    int rc = regex_compile_ex(&re, argv[pattern_arg], flags, error, sizeof(error));
     if (rc != RX_OK) {
         fprintf(stderr, "compile failed: %s (rc=%d: %s)\n",
                 error, rc, regex_status_string(rc));
@@ -19,11 +25,15 @@ int main(int argc, char **argv)
     }
 
     rx_match_t m = {-1, -1};
-    rc = regex_search(re, argv[2], &m, 1);
+    const char *text = argv[pattern_arg + 1];
+    if (flags == RX_FLAG_DFA) {
+        printf("mode: DFA\n");
+    }
+    rc = regex_search(re, text, &m, 1);
     if (rc == RX_OK) {
         printf("match [%d,%d): ", m.rm_so, m.rm_eo);
         for (int i = m.rm_so; i < m.rm_eo; ++i) {
-            putchar(argv[2][i]);
+            putchar(text[i]);
         }
         putchar('\n');
     } else if (rc == RX_NOMATCH) {

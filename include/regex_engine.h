@@ -27,7 +27,8 @@ typedef enum {
 } rx_status_t;
 
 enum {
-    RX_FLAG_NONE = 0u
+    RX_FLAG_NONE = 0u,
+    RX_FLAG_DFA = 1u << 0
 };
 
 int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags);

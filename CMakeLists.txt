@@ -12,6 +12,7 @@ add_library(regex_engine
     src/parser.c
     src/nfa.c
     src/matcher.c
+    src/dfa.c
     src/regex_engine.c
 )
 target_include_directories(regex_engine PUBLIC include)
@@ -52,6 +53,12 @@ target_link_libraries(test_nfa PRIVATE regex_engine)
 rx_enable_warnings(test_nfa)
 add_test(NAME test_nfa COMMAND test_nfa)
 
+add_executable(test_dfa tests/test_dfa.c)
+target_include_directories(test_dfa PRIVATE src)
+target_link_libraries(test_dfa PRIVATE regex_engine)
+rx_enable_warnings(test_dfa)
+add_test(NAME test_dfa COMMAND test_dfa)
+
 add_executable(rx_cli tools/rx_cli.c)
 target_link_libraries(rx_cli PRIVATE regex_engine)
 rx_enable_warnings(rx_cli)
@@ -70,3 +77,8 @@ add_executable(rx_dump_nfa tools/rx_dump_nfa.c)
 target_include_directories(rx_dump_nfa PRIVATE src)
 target_link_libraries(rx_dump_nfa PRIVATE regex_engine)
 rx_enable_warnings(rx_dump_nfa)
+
+add_executable(rx_dump_dfa tools/rx_dump_dfa.c)
+target_include_directories(rx_dump_dfa PRIVATE src)
+target_link_libraries(rx_dump_dfa PRIVATE regex_engine)
+rx_enable_warnings(rx_dump_dfa)

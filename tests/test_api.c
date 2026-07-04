@@ -63,6 +63,31 @@ static void expect_search(const char *pattern, const char *text, int expected_so
     regex_free(re);
 }
 
+static void expect_dfa_result(const char *pattern,
+                              const char *text,
+                              int search,
+                              int expected_so,
+                              int expected_eo)
+{
+    rx_regex_t *re = NULL;
+    char error[256];
+    int rc = regex_compile_ex(&re, pattern, RX_FLAG_DFA, error, sizeof(error));
+    if (rc != RX_OK) {
+        printf("FAIL DFA compile /%s/: rc=%d error='%s'\n", pattern, rc, error);
+        failures++;
+        return;
+    }
+
+    rx_match_t match = {-1, -1};
+    rc = search ? regex_search(re, text, &match, 1) : regex_match(re, text, &match, 1);
+    if (rc != RX_OK || match.rm_so != expected_so || match.rm_eo != expected_eo) {
+        printf("FAIL DFA %s /%s/ text='%s': rc=%d span=[%d,%d]\n",
+               search ? "search" : "match", pattern, text, rc, match.rm_so, match.rm_eo);
+        failures++;
+    }
+    regex_free(re);
+}
+
 static void expect_compile_error(const char *pattern)
 {
     rx_regex_t *re = NULL;
@@ -106,10 +131,11 @@ static int collect_match(const rx_match_t *matches, size_t nmatch, void *userdat
 static void expect_findall(const char *pattern,
                            const char *text,
                            const rx_match_t *expected,
-                           size_t expected_count)
+                           size_t expected_count,
+                           unsigned flags)
 {
     rx_regex_t *re = NULL;
-    int rc = regex_compile(&re, pattern, RX_FLAG_NONE);
+    int rc = regex_compile(&re, pattern, flags);
     if (rc != RX_OK) {
         printf("FAIL compile /%s/: rc=%d\n", pattern, rc);
         failures++;
@@ -173,13 +199,19 @@ int main(void)
     expect_search("abc", "zzabcxx", 2, 5);
     expect_search("a{2,3}", "zaaax", 1, 4);
     expect_search("a*", "bbb", 0, 0);
+    expect_dfa_result("a{2,4}", "aaa", 0, 0, 3);
+    expect_dfa_result("a+", "zzaaa", 1, 2, 5);
     {
         const rx_match_t expected[] = {{0, 2}, {3, 5}};
-        expect_findall("a{2}", "aabaa", expected, 2);
+        expect_findall("a{2}", "aabaa", expected, 2, RX_FLAG_NONE);
     }
     {
         const rx_match_t expected[] = {{0, 0}, {1, 1}, {2, 2}, {3, 3}};
-        expect_findall("a{0}", "bbb", expected, 4);
+        expect_findall("a{0}", "bbb", expected, 4, RX_FLAG_NONE);
+    }
+    {
+        const rx_match_t expected[] = {{0, 2}, {4, 5}};
+        expect_findall("a+", "aa_ba", expected, 2, RX_FLAG_DFA);
     }
     expect_compile_error("(");
     expect_compile_error("[abc");
@@ -199,7 +231,8 @@ int main(void)
     expect_compile_error_detail("a{2", RX_FLAG_NONE, RX_EBRACE, "byte 1");
     expect_compile_error_detail("a{3,2}", RX_FLAG_NONE, RX_BADRPT, "byte 1");
     expect_compile_error_detail("a**", RX_FLAG_NONE, RX_BADRPT, "byte 2");
-    expect_compile_error_detail("abc", 1u, RX_EUNSUPPORTED, "flags");
+    expect_compile_error_detail("^abc$", RX_FLAG_DFA, RX_EUNSUPPORTED, "anchors");
+    expect_compile_error_detail("abc", 2u, RX_EUNSUPPORTED, "flags");
     if (strcmp(regex_status_string(RX_BADRPT), "invalid repetition operator") != 0) {
         printf("FAIL status string\n");
         failures++;

@@ -1,6 +1,7 @@
 #include "regex_engine.h"
 
 #include "ast.h"
+#include "dfa.h"
 #include "matcher.h"
 #include "nfa.h"
 #include "parser.h"
@@ -17,6 +18,7 @@ struct rx_regex {
     ast_node_t *ast;
     size_t capture_count;
     nfa_t nfa;
+    dfa_t dfa;
 };
 
 static void set_error(char *dst, size_t dst_len, const char *fmt, ...)
@@ -56,7 +58,7 @@ int regex_compile_ex(rx_regex_t **out,
         return RX_BADPAT;
     }
     *out = NULL;
-    if (flags != RX_FLAG_NONE) {
+    if ((flags & ~RX_FLAG_DFA) != 0) {
         set_error(error, error_size, "unsupported compile flags: 0x%X", flags);
         return RX_EUNSUPPORTED;
     }
@@ -68,6 +70,7 @@ int regex_compile_ex(rx_regex_t **out,
     }
     re->flags = flags;
     nfa_init(&re->nfa);
+    dfa_init(&re->dfa);
     re->pattern = rx_strdup(pattern);
     if (re->pattern == NULL) {
         set_error(error, error_size, "out of memory");
@@ -94,6 +97,28 @@ int regex_compile_ex(rx_regex_t **out,
     re->nfa.start = frag.start;
     re->nfa.accept = frag.accept;
 
+    if ((flags & RX_FLAG_DFA) != 0) {
+        if (!dfa_can_build(&re->nfa)) {
+            set_error(re->error, sizeof(re->error),
+                      "DFA mode does not yet support '^' or '$' anchors");
+            set_error(error, error_size, "%s", re->error);
+            regex_free(re);
+            return RX_EUNSUPPORTED;
+        }
+        rc = dfa_build(&re->dfa, &re->nfa);
+        if (rc != RX_OK) {
+            if (rc == RX_EUNSUPPORTED) {
+                set_error(re->error, sizeof(re->error),
+                          "failed to build DFA (state limit %u)", RX_DFA_STATE_LIMIT);
+            } else {
+                set_error(re->error, sizeof(re->error), "out of memory while building DFA");
+            }
+            set_error(error, error_size, "%s", re->error);
+            regex_free(re);
+            return rc;
+        }
+    }
+
     *out = re;
     return RX_OK;
 }
@@ -103,13 +128,21 @@ int regex_compile(rx_regex_t **out, const char *pattern, unsigned flags)
     return regex_compile_ex(out, pattern, flags, NULL, 0);
 }
 
+static int regex_run_from(const rx_regex_t *re, const char *text, size_t start, size_t *end_out)
+{
+    if ((re->flags & RX_FLAG_DFA) != 0) {
+        return dfa_run_from(&re->dfa, text, start, end_out);
+    }
+    return nfa_run_from(&re->nfa, text, start, end_out);
+}
+
 int regex_match(const rx_regex_t *re, const char *text, rx_match_t *matches, size_t nmatch)
 {
     if (re == NULL || text == NULL) {
         return RX_BADPAT;
     }
     size_t end = 0;
-    int rc = nfa_run_from(&re->nfa, text, 0, &end);
+    int rc = regex_run_from(re, text, 0, &end);
     if (rc != RX_OK) {
         return rc;
     }
@@ -131,7 +164,7 @@ int regex_search(const rx_regex_t *re, const char *text, rx_match_t *matches, si
     size_t len = strlen(text);
     for (size_t start = 0; start <= len; ++start) {
         size_t end = 0;
-        int rc = nfa_run_from(&re->nfa, text, start, &end);
+        int rc = regex_run_from(re, text, start, &end);
         if (rc == RX_OK) {
             if (matches != NULL && nmatch > 0) {
                 matches[0].rm_so = (int)start;
@@ -163,7 +196,7 @@ int regex_findall(const rx_regex_t *re,
 
         for (size_t probe = start; probe <= len; ++probe) {
             size_t end = 0;
-            int rc = nfa_run_from(&re->nfa, text, probe, &end);
+            int rc = regex_run_from(re, text, probe, &end);
             if (rc == RX_OK) {
                 m.rm_so = (int)probe;
                 m.rm_eo = (int)end;
@@ -223,5 +256,6 @@ void regex_free(rx_regex_t *re)
     free(re->pattern);
     ast_free(re->ast);
     nfa_free(&re->nfa);
+    dfa_free(&re->dfa);
     free(re);
 }

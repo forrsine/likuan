@@ -58,7 +58,7 @@ bool dfa_can_build(const nfa_t *nfa)
         for (size_t i = 0; i < transitions->len; ++i) {
             const transition_t *transition = &transitions->items[i];
             if (transition->to < 0 || (size_t)transition->to >= nfa->len ||
-                transition->type < TR_EPS || transition->type > TR_ANCHOR_END) {
+                transition->type < TR_EPS || transition->type > TR_SAVE_END) {
                 return false;
             }
         }
@@ -90,6 +90,8 @@ static int epsilon_closure(const nfa_t *nfa,
         for (size_t i = 0; i < transitions->len; ++i) {
             const transition_t *transition = &transitions->items[i];
             bool can_take = transition->type == TR_EPS ||
+                            transition->type == TR_SAVE_START ||
+                            transition->type == TR_SAVE_END ||
                             (transition->type == TR_ANCHOR_BEGIN && at_begin) ||
                             (transition->type == TR_ANCHOR_END && at_end);
             if (can_take && !bitset_has(set, (size_t)transition->to)) {

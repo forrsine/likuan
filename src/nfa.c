@@ -71,6 +71,15 @@ int nfa_add_eps(nfa_t *nfa, int from, int to)
     return nfa_add_transition(nfa, from, to, TR_EPS, NULL);
 }
 
+int nfa_add_save(nfa_t *nfa, int from, int to, trans_type_t type, int save_slot)
+{
+    int rc = nfa_add_transition(nfa, from, to, type, NULL);
+    if (rc == RX_OK) {
+        nfa->states[from].trans.items[nfa->states[from].trans.len - 1].save_slot = save_slot;
+    }
+    return rc;
+}
+
 int nfa_compile_ast(nfa_t *nfa, const ast_node_t *node, frag_t *out)
 {
     if (node == NULL) {
@@ -78,7 +87,26 @@ int nfa_compile_ast(nfa_t *nfa, const ast_node_t *node, frag_t *out)
     }
 
     if (node->type == AST_GROUP) {
-        return nfa_compile_ast(nfa, node->left, out);
+        frag_t inner;
+        int rc = nfa_compile_ast(nfa, node->left, &inner);
+        if (rc != RX_OK) {
+            return rc;
+        }
+        int s = nfa_add_state(nfa);
+        int e = nfa_add_state(nfa);
+        if (s < 0 || e < 0) {
+            return RX_ESPACE;
+        }
+        rc = nfa_add_save(nfa, s, inner.start, TR_SAVE_START, (int)node->group_id);
+        if (rc == RX_OK) {
+            rc = nfa_add_save(nfa, inner.accept, e, TR_SAVE_END, (int)node->group_id);
+        }
+        if (rc != RX_OK) {
+            return rc;
+        }
+        out->start = s;
+        out->accept = e;
+        return RX_OK;
     }
 
     if (node->type == AST_CONCAT || node->type == AST_ALT) {
@@ -311,6 +339,8 @@ const char *nfa_transition_type_name(trans_type_t type)
     case TR_ANY: return "ANY";
     case TR_ANCHOR_BEGIN: return "BEGIN";
     case TR_ANCHOR_END: return "END";
+    case TR_SAVE_START: return "SAVE_S";
+    case TR_SAVE_END: return "SAVE_E";
     }
     return "UNKNOWN";
 }
@@ -337,6 +367,8 @@ static void dump_transition_value(const transition_t *transition, FILE *out)
     case TR_ANY: fputc('.', out); break;
     case TR_ANCHOR_BEGIN: fputc('^', out); break;
     case TR_ANCHOR_END: fputc('$', out); break;
+    case TR_SAVE_START: fprintf(out, "save_start(%d)", transition->save_slot); break;
+    case TR_SAVE_END: fprintf(out, "save_end(%d)", transition->save_slot); break;
     }
 }
 

@@ -40,8 +40,11 @@ static int lex_escape(rx_lexer_t *lexer, unsigned char cls[RX_CHARSET_BYTES])
     rx_charset_clear(cls);
     switch (c) {
     case 'd': rx_charset_add_digit(cls); break;
+    case 'D': rx_charset_add_digit(cls); rx_charset_invert(cls); break;
     case 'w': rx_charset_add_word(cls); break;
+    case 'W': rx_charset_add_word(cls); rx_charset_invert(cls); break;
     case 's': rx_charset_add_space(cls); break;
+    case 'S': rx_charset_add_space(cls); rx_charset_invert(cls); break;
     case 'n': rx_charset_add(cls, '\n'); break;
     case 't': rx_charset_add(cls, '\t'); break;
     case 'r': rx_charset_add(cls, '\r'); break;

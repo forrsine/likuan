@@ -262,6 +262,184 @@ int main(void)
         failures++;
     }
 
+    /* --- Capture group tests --- */
+    {
+        rx_regex_t *re = NULL;
+        int rc;
+
+        /* Simple single group */
+        rc = regex_compile(&re, "(a)", RX_FLAG_NONE);
+        if (rc != RX_OK) {
+            printf("FAIL capture compile /(a)/: rc=%d\n", rc);
+            failures++;
+        } else {
+            rx_match_t m[2] = {{-1, -1}, {-1, -1}};
+            rc = regex_match(re, "a", m, 2);
+            if (rc != RX_OK || m[0].rm_so != 0 || m[0].rm_eo != 1 ||
+                m[1].rm_so != 0 || m[1].rm_eo != 1) {
+                printf("FAIL capture /(a)/ 'a': rc=%d full=[%d,%d] g1=[%d,%d]\n",
+                       rc, m[0].rm_so, m[0].rm_eo, m[1].rm_so, m[1].rm_eo);
+                failures++;
+            }
+        }
+        regex_free(re);
+
+        /* Multiple groups */
+        rc = regex_compile(&re, "(a)(b)", RX_FLAG_NONE);
+        if (rc != RX_OK) {
+            printf("FAIL capture compile: rc=%d\n", rc);
+            failures++;
+        } else {
+            rx_match_t m[3] = {{-1, -1}, {-1, -1}, {-1, -1}};
+            rc = regex_match(re, "ab", m, 3);
+            if (rc != RX_OK || m[0].rm_so != 0 || m[0].rm_eo != 2 ||
+                m[1].rm_so != 0 || m[1].rm_eo != 1 ||
+                m[2].rm_so != 1 || m[2].rm_eo != 2) {
+                printf("FAIL capture /(a)(b)/ 'ab': rc=%d full=[%d,%d] g1=[%d,%d] g2=[%d,%d]\n",
+                       rc, m[0].rm_so, m[0].rm_eo, m[1].rm_so, m[1].rm_eo, m[2].rm_so, m[2].rm_eo);
+                failures++;
+            }
+        }
+        regex_free(re);
+
+        /* Nested groups */
+        rc = regex_compile(&re, "(a(b)c)", RX_FLAG_NONE);
+        if (rc != RX_OK) {
+            printf("FAIL capture compile /(a(b)c)/: rc=%d\n", rc);
+            failures++;
+        } else {
+            rx_match_t m[3] = {{-1, -1}, {-1, -1}, {-1, -1}};
+            rc = regex_match(re, "abc", m, 3);
+            if (rc != RX_OK || m[0].rm_so != 0 || m[0].rm_eo != 3 ||
+                m[1].rm_so != 0 || m[1].rm_eo != 3 ||
+                m[2].rm_so != 1 || m[2].rm_eo != 2) {
+                printf("FAIL capture /(a(b)c)/ 'abc': rc=%d full=[%d,%d] g1=[%d,%d] g2=[%d,%d]\n",
+                       rc, m[0].rm_so, m[0].rm_eo, m[1].rm_so, m[1].rm_eo, m[2].rm_so, m[2].rm_eo);
+                failures++;
+            }
+        }
+        regex_free(re);
+
+        /* Group with + repetition (last iteration wins) */
+        rc = regex_compile(&re, "(a)+", RX_FLAG_NONE);
+        if (rc != RX_OK) {
+            printf("FAIL capture compile /(a)+/: rc=%d\n", rc);
+            failures++;
+        } else {
+            rx_match_t m[2] = {{-1, -1}, {-1, -1}};
+            rc = regex_match(re, "aaa", m, 2);
+            if (rc != RX_OK || m[0].rm_so != 0 || m[0].rm_eo != 3 ||
+                m[1].rm_so != 2 || m[1].rm_eo != 3) {
+                printf("FAIL capture /(a)+/ 'aaa': rc=%d full=[%d,%d] g1=[%d,%d]\n",
+                       rc, m[0].rm_so, m[0].rm_eo, m[1].rm_so, m[1].rm_eo);
+                failures++;
+            }
+        }
+        regex_free(re);
+
+        /* Alternation - first branch matches */
+        rc = regex_compile(&re, "(a)|(b)", RX_FLAG_NONE);
+        if (rc != RX_OK) {
+            printf("FAIL capture compile /(a)|(b)/: rc=%d\n", rc);
+            failures++;
+        } else {
+            rx_match_t m[3] = {{-1, -1}, {-1, -1}, {-1, -1}};
+            rc = regex_match(re, "a", m, 3);
+            if (rc != RX_OK || m[0].rm_so != 0 || m[0].rm_eo != 1 ||
+                m[1].rm_so != 0 || m[1].rm_eo != 1 ||
+                m[2].rm_so != -1 || m[2].rm_eo != -1) {
+                printf("FAIL capture /(a)|(b)/ 'a': rc=%d full=[%d,%d] g1=[%d,%d] g2=[%d,%d]\n",
+                       rc, m[0].rm_so, m[0].rm_eo, m[1].rm_so, m[1].rm_eo, m[2].rm_so, m[2].rm_eo);
+                failures++;
+            }
+            /* Second branch matches */
+            m[0].rm_so = m[0].rm_eo = m[1].rm_so = m[1].rm_eo = m[2].rm_so = m[2].rm_eo = -1;
+            rc = regex_match(re, "b", m, 3);
+            if (rc != RX_OK || m[0].rm_so != 0 || m[0].rm_eo != 1 ||
+                m[1].rm_so != -1 || m[1].rm_eo != -1 ||
+                m[2].rm_so != 0 || m[2].rm_eo != 1) {
+                printf("FAIL capture /(a)|(b)/ 'b': rc=%d full=[%d,%d] g1=[%d,%d] g2=[%d,%d]\n",
+                       rc, m[0].rm_so, m[0].rm_eo, m[1].rm_so, m[1].rm_eo, m[2].rm_so, m[2].rm_eo);
+                failures++;
+            }
+        }
+        regex_free(re);
+
+        /* Search with groups */
+        rc = regex_compile(&re, "(a+)(b+)", RX_FLAG_NONE);
+        if (rc != RX_OK) {
+            printf("FAIL capture compile /(a+)(b+)/: rc=%d\n", rc);
+            failures++;
+        } else {
+            rx_match_t m[3] = {{-1, -1}, {-1, -1}, {-1, -1}};
+            rc = regex_search(re, "xaabb", m, 3);
+            if (rc != RX_OK || m[0].rm_so != 1 || m[0].rm_eo != 5 ||
+                m[1].rm_so != 1 || m[1].rm_eo != 3 ||
+                m[2].rm_so != 3 || m[2].rm_eo != 5) {
+                printf("FAIL capture search /(a+)(b+)/ 'xaabb': rc=%d full=[%d,%d] g1=[%d,%d] g2=[%d,%d]\n",
+                       rc, m[0].rm_so, m[0].rm_eo, m[1].rm_so, m[1].rm_eo, m[2].rm_so, m[2].rm_eo);
+                failures++;
+            }
+        }
+        regex_free(re);
+
+        /* Group with star - captures last iteration */
+        rc = regex_compile(&re, "(ab)*", RX_FLAG_NONE);
+        if (rc != RX_OK) {
+            printf("FAIL capture compile /(ab)*/: rc=%d\n", rc);
+            failures++;
+        } else {
+            rx_match_t m[2] = {{-1, -1}, {-1, -1}};
+            rc = regex_match(re, "abab", m, 2);
+            if (rc != RX_OK || m[0].rm_so != 0 || m[0].rm_eo != 4 ||
+                m[1].rm_so != 2 || m[1].rm_eo != 4) {
+                printf("FAIL capture /(ab)*/ 'abab': rc=%d full=[%d,%d] g1=[%d,%d]\n",
+                       rc, m[0].rm_so, m[0].rm_eo, m[1].rm_so, m[1].rm_eo);
+                failures++;
+            }
+        }
+        regex_free(re);
+
+        /* Group with quantifier - no match should return NOMATCH */
+        rc = regex_compile(&re, "(a)", RX_FLAG_NONE);
+        if (rc != RX_OK) {
+            printf("FAIL capture compile: rc=%d\n", rc);
+            failures++;
+        } else {
+            rx_match_t m[2] = {{-1, -1}, {-1, -1}};
+            rc = regex_match(re, "b", m, 2);
+            if (rc != RX_NOMATCH) {
+                printf("FAIL capture no-match: rc=%d\n", rc);
+                failures++;
+            }
+        }
+        regex_free(re);
+
+        /* DFA mode with groups (captures not supported in DFA, only full match) */
+        rc = regex_compile(&re, "(ab)+", RX_FLAG_DFA);
+        if (rc != RX_OK) {
+            printf("FAIL DFA capture compile: rc=%d\n", rc);
+            failures++;
+        } else {
+            rx_match_t m[1] = {{-1, -1}};
+            rc = regex_match(re, "abab", m, 1);
+            if (rc != RX_OK || m[0].rm_so != 0 || m[0].rm_eo != 4) {
+                printf("FAIL DFA capture /(ab)+/ 'abab': rc=%d full=[%d,%d]\n",
+                       rc, m[0].rm_so, m[0].rm_eo);
+                failures++;
+            }
+        }
+        regex_free(re);
+
+        /* \D \W \S escape sequences */
+        expect_match("\\D+", "abc", 0, 3);
+        expect_no_match("\\D+", "123");
+        expect_match("\\W+", "!@#", 0, 3);
+        expect_no_match("\\W+", "abc");
+        expect_match("\\S+", "abc", 0, 3);
+        expect_no_match("\\S+", " \t");
+    }
+
     if (failures != 0) {
         printf("%d test(s) failed\n", failures);
         return 1;

@@ -13,13 +13,16 @@ typedef enum {
     TR_CLASS,
     TR_ANY,
     TR_ANCHOR_BEGIN,
-    TR_ANCHOR_END
+    TR_ANCHOR_END,
+    TR_SAVE_START,
+    TR_SAVE_END
 } trans_type_t;
 
 typedef struct {
     int to;
     trans_type_t type;
     unsigned char cls[RX_CHARSET_BYTES];
+    int save_slot;
 } transition_t;
 
 typedef struct {
@@ -51,6 +54,7 @@ int nfa_add_state(nfa_t *nfa);
 int nfa_add_transition(nfa_t *nfa, int from, int to, trans_type_t type,
                        const unsigned char cls[RX_CHARSET_BYTES]);
 int nfa_add_eps(nfa_t *nfa, int from, int to);
+int nfa_add_save(nfa_t *nfa, int from, int to, trans_type_t type, int save_slot);
 int nfa_compile_ast(nfa_t *nfa, const struct ast_node *node, frag_t *out);
 size_t nfa_transition_count(const nfa_t *nfa);
 const char *nfa_transition_type_name(trans_type_t type);

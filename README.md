@@ -4,14 +4,16 @@
 
 ## 当前进度
 
-已完成工程骨架、解析前端、Thompson NFA、子集构造 DFA、Hopcroft 最小化、状态转移表和 NFA/DFA 双模式匹配：
+已完成工程骨架、解析前端、Thompson NFA、子集构造 DFA、Hopcroft 最小化、状态转移表、NFA/DFA 双模式匹配和捕获组位置返回：
 
 - C17 + CMake 项目结构
 - 对外 API：`regex_compile`、`regex_compile_ex`、`regex_match`、`regex_search`、`regex_findall`、`regex_free`
-- MVP 语法：普通字符、连接、`|`、`*`、`+`、`?`、`{m}`、`{m,}`、`{m,n}`、括号、`.`、字符类、`[^]`、`^`、`$`、`\d`、`\w`、`\s`
+- MVP 语法：普通字符、连接、`|`、`*`、`+`、`?`、`{m}`、`{m,}`、`{m,n}`、括号、`.`、字符类、`[^]`、`^`、`$`、`\d`、`\D`、`\w`、`\W`、`\s`、`\S`、`\t`、`\n`、`\r`
 - 区间量词采用 Thompson NFA 展开，重复次数上限为 10000，防止异常模式消耗过多内存
 - 编译期检查非法重复、倒置字符范围和不合法的范围端点
 - `regex_compile_ex` 返回带字节位置的详细错误，括号嵌套上限为 256
+- `regex_match`/`regex_search`/`regex_findall` 通过 `rx_match_t` 数组返回捕获组起止位置
+- NFA 模式通过 SAVE 转移追踪捕获组，DFA 模式返回整体匹配
 - `RX_FLAG_DFA` 可选择 DFA 执行器，默认仍使用 NFA
 - DFA 状态上限为 4096，NFA/DFA 两种模式均支持 `^`、`$` 锚点
 - DFA 构造使用字符等价类压缩，仅对行为不同的字符代表执行 move + closure
@@ -55,5 +57,5 @@ ctest --test-dir build -C Debug --output-on-failure
 
 ## 下一阶段
 
-- 增加捕获组位置返回
 - 实现 NFA/DFA DOT 导出
+- 添加非贪婪量词（`*?`、`+?`、`??`、`{m,n}?`）

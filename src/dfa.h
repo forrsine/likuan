@@ -22,6 +22,7 @@ typedef struct {
     unsigned char *nfa_set;
     int transitions[RX_DFA_ALPHABET_SIZE];
     int final_transitions[RX_DFA_ALPHABET_SIZE];
+    int hash_next;
     bool is_accept;
 } dfa_state_t;
 
@@ -31,6 +32,8 @@ typedef struct {
     size_t cap;
     size_t set_bytes;
     size_t subset_state_count;
+    int *hash_buckets;
+    size_t hash_bucket_count;
     int start;
     int start_states[RX_DFA_CONTEXT_COUNT];
     unsigned short class_of[RX_DFA_ALPHABET_SIZE];

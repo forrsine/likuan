@@ -1,9 +1,24 @@
 cmake_minimum_required(VERSION 3.21)
 project(regex_engine C)
 
+include(CheckIncludeFile)
+check_include_file("regex.h" RX_HAVE_POSIX_REGEX_H)
+
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+
+option(RX_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+if(RX_ENABLE_SANITIZERS)
+    if(MSVC)
+        add_compile_options(/fsanitize=address)
+    elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=address,undefined)
+    else()
+        message(FATAL_ERROR "RX_ENABLE_SANITIZERS is unsupported by this compiler")
+    endif()
+endif()
 
 add_library(regex_engine
     src/charset.c
@@ -12,6 +27,7 @@ add_library(regex_engine
     src/parser.c
     src/nfa.c
     src/matcher.c
+    src/capture.c
     src/dfa.c
     src/dfa_minimize.c
     src/regex_engine.c
@@ -60,6 +76,19 @@ target_link_libraries(test_dfa PRIVATE regex_engine)
 rx_enable_warnings(test_dfa)
 add_test(NAME test_dfa COMMAND test_dfa)
 
+add_executable(test_stress tests/test_stress.c)
+target_link_libraries(test_stress PRIVATE regex_engine)
+rx_enable_warnings(test_stress)
+add_test(NAME test_stress COMMAND test_stress)
+set_tests_properties(test_stress PROPERTIES TIMEOUT 60)
+
+if(RX_HAVE_POSIX_REGEX_H)
+    add_executable(test_posix tests/test_posix.c)
+    target_link_libraries(test_posix PRIVATE regex_engine)
+    rx_enable_warnings(test_posix)
+    add_test(NAME test_posix COMMAND test_posix)
+endif()
+
 add_executable(rx_cli tools/rx_cli.c)
 target_link_libraries(rx_cli PRIVATE regex_engine)
 rx_enable_warnings(rx_cli)
@@ -83,3 +112,12 @@ add_executable(rx_dump_dfa tools/rx_dump_dfa.c)
 target_include_directories(rx_dump_dfa PRIVATE src)
 target_link_libraries(rx_dump_dfa PRIVATE regex_engine)
 rx_enable_warnings(rx_dump_dfa)
+
+add_executable(rx_bench tools/rx_bench.c)
+target_link_libraries(rx_bench PRIVATE regex_engine)
+if(RX_HAVE_POSIX_REGEX_H)
+    target_compile_definitions(rx_bench PRIVATE RX_HAVE_POSIX_REGEX=1)
+else()
+    target_compile_definitions(rx_bench PRIVATE RX_HAVE_POSIX_REGEX=0)
+endif()
+rx_enable_warnings(rx_bench)

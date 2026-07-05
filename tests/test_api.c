@@ -538,7 +538,7 @@ int main(void)
         }
         regex_free(re);
 
-        /* DFA mode with groups (captures not supported in DFA, only full match) */
+        /* DFA mode still supports callers that only request the full match. */
         rc = regex_compile(&re, "(ab)+", RX_FLAG_DFA);
         if (rc != RX_OK) {
             printf("FAIL DFA capture compile: rc=%d\n", rc);

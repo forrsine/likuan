@@ -14,6 +14,14 @@ typedef struct {
     int rm_eo;
 } rx_match_t;
 
+typedef struct {
+    size_t nfa_states;
+    size_t nfa_transitions;
+    size_t dfa_subset_states;
+    size_t dfa_states;
+    size_t dfa_character_classes;
+} rx_regex_stats_t;
+
 typedef enum {
     RX_OK = 0,
     RX_NOMATCH = 1,
@@ -44,6 +52,7 @@ int regex_findall(const rx_regex_t *re,
                   int (*on_match)(const rx_match_t *matches, size_t nmatch, void *userdata),
                   void *userdata);
 size_t regex_capture_count(const rx_regex_t *re);
+int regex_get_stats(const rx_regex_t *re, rx_regex_stats_t *stats);
 const char *regex_error(const rx_regex_t *re);
 const char *regex_status_string(int status);
 void regex_free(rx_regex_t *re);

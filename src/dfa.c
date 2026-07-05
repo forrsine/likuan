@@ -44,6 +44,7 @@ void dfa_free(dfa_t *dfa)
         free(dfa->states[i].nfa_set);
     }
     free(dfa->states);
+    free(dfa->hash_buckets);
     dfa_init(dfa);
 }
 
@@ -58,11 +59,7 @@ bool dfa_can_build(const nfa_t *nfa)
         for (size_t i = 0; i < transitions->len; ++i) {
             const transition_t *transition = &transitions->items[i];
             if (transition->to < 0 || (size_t)transition->to >= nfa->len ||
-<<<<<<< Updated upstream
-                transition->type < TR_EPS || transition->type > TR_SAVE_END) {
-=======
                 transition->type < TR_EPS || transition->type > TR_CAPTURE_END) {
->>>>>>> Stashed changes
                 return false;
             }
         }
@@ -94,13 +91,8 @@ static int epsilon_closure(const nfa_t *nfa,
         for (size_t i = 0; i < transitions->len; ++i) {
             const transition_t *transition = &transitions->items[i];
             bool can_take = transition->type == TR_EPS ||
-<<<<<<< Updated upstream
-                            transition->type == TR_SAVE_START ||
-                            transition->type == TR_SAVE_END ||
-=======
                             transition->type == TR_CAPTURE_BEGIN ||
                             transition->type == TR_CAPTURE_END ||
->>>>>>> Stashed changes
                             (transition->type == TR_ANCHOR_BEGIN && at_begin) ||
                             (transition->type == TR_ANCHOR_END && at_end);
             if (can_take && !bitset_has(set, (size_t)transition->to)) {
@@ -176,11 +168,39 @@ static void build_character_classes(dfa_t *dfa, const nfa_t *nfa)
     }
 }
 
+static size_t dfa_set_hash(const unsigned char *set, size_t bytes)
+{
+    size_t hash = (size_t)2166136261u;
+    for (size_t i = 0; i < bytes; ++i) {
+        hash ^= set[i];
+        hash *= (size_t)16777619u;
+    }
+    return hash;
+}
+
+static int dfa_prepare_hash(dfa_t *dfa)
+{
+    dfa->hash_bucket_count = 8192;
+    dfa->hash_buckets =
+        (int *)malloc(dfa->hash_bucket_count * sizeof(*dfa->hash_buckets));
+    if (dfa->hash_buckets == NULL) {
+        dfa->hash_bucket_count = 0;
+        return RX_ESPACE;
+    }
+    for (size_t i = 0; i < dfa->hash_bucket_count; ++i) {
+        dfa->hash_buckets[i] = -1;
+    }
+    return RX_OK;
+}
+
 static int dfa_find_state(const dfa_t *dfa, const unsigned char *set)
 {
-    for (size_t i = 0; i < dfa->len; ++i) {
-        if (memcmp(dfa->states[i].nfa_set, set, dfa->set_bytes) == 0) {
-            return (int)i;
+    size_t bucket = dfa_set_hash(set, dfa->set_bytes) % dfa->hash_bucket_count;
+    for (int state = dfa->hash_buckets[bucket];
+         state >= 0;
+         state = dfa->states[state].hash_next) {
+        if (memcmp(dfa->states[state].nfa_set, set, dfa->set_bytes) == 0) {
+            return state;
         }
     }
     return -1;
@@ -213,7 +233,11 @@ static int dfa_add_state(dfa_t *dfa, const nfa_t *nfa, const unsigned char *set)
         state->final_transitions[i] = -1;
     }
     state->is_accept = bitset_has(set, (size_t)nfa->accept);
-    return (int)dfa->len++;
+    int index = (int)dfa->len++;
+    size_t bucket = dfa_set_hash(set, dfa->set_bytes) % dfa->hash_bucket_count;
+    state->hash_next = dfa->hash_buckets[bucket];
+    dfa->hash_buckets[bucket] = index;
+    return index;
 }
 
 static int dfa_resolve_state(dfa_t *dfa,
@@ -263,15 +287,23 @@ int dfa_build(dfa_t *dfa, const nfa_t *nfa)
     dfa->set_bytes = (nfa->len + 7u) / 8u;
     build_character_classes(dfa, nfa);
 
+    int rc = dfa_prepare_hash(dfa);
+    if (rc != RX_OK) {
+        return rc;
+    }
+
     unsigned char *start_set = (unsigned char *)calloc(dfa->set_bytes, 1);
     unsigned char *target_set = (unsigned char *)malloc(dfa->set_bytes);
     if (start_set == NULL || target_set == NULL) {
         free(start_set);
         free(target_set);
+        free(dfa->hash_buckets);
+        dfa->hash_buckets = NULL;
+        dfa->hash_bucket_count = 0;
         return RX_ESPACE;
     }
 
-    int rc = RX_OK;
+    rc = RX_OK;
     for (size_t context = 0; context < RX_DFA_CONTEXT_COUNT; ++context) {
         memset(start_set, 0, dfa->set_bytes);
         bitset_add(start_set, (size_t)nfa->start);
@@ -329,6 +361,9 @@ int dfa_build(dfa_t *dfa, const nfa_t *nfa)
 done:
     free(start_set);
     free(target_set);
+    free(dfa->hash_buckets);
+    dfa->hash_buckets = NULL;
+    dfa->hash_bucket_count = 0;
     if (rc == RX_OK) {
         dfa->subset_state_count = dfa->len;
     }

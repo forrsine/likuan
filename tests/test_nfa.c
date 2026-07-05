@@ -81,16 +81,16 @@ static void test_nfa_execution(void)
     nfa_t nfa;
     if (build_nfa("a|aa", &nfa) == RX_OK) {
         size_t end = 0;
-        int rc = nfa_run_from(&nfa, "aa", 0, &end, NULL, 0);
+        int rc = nfa_run_from(&nfa, "aa", 0, &end);
         check(rc == RX_OK && end == 2, "NFA chooses longest match at same start");
         nfa_free(&nfa);
     }
 
     if (build_nfa("^a$", &nfa) == RX_OK) {
         size_t end = 0;
-        check(nfa_run_from(&nfa, "a", 0, &end, NULL, 0) == RX_OK && end == 1,
+        check(nfa_run_from(&nfa, "a", 0, &end) == RX_OK && end == 1,
               "NFA anchor match");
-        check(nfa_run_from(&nfa, "za", 1, &end, NULL, 0) == RX_NOMATCH,
+        check(nfa_run_from(&nfa, "za", 1, &end) == RX_NOMATCH,
               "begin anchor rejects nonzero start");
         nfa_free(&nfa);
     }

@@ -96,6 +96,25 @@ static void test_nfa_execution(void)
     }
 }
 
+static void test_capture_tags(void)
+{
+    nfa_t nfa;
+    if (build_nfa("(a)", &nfa) != RX_OK) {
+        return;
+    }
+    check(nfa.len == 4, "capture group state count");
+    check(nfa_transition_count(&nfa) == 3, "capture group transition count");
+    check(nfa.states[nfa.start].trans.len == 1 &&
+              nfa.states[nfa.start].trans.items[0].type == TR_CAPTURE_BEGIN &&
+              nfa.states[nfa.start].trans.items[0].group_id == 1,
+          "capture begin tag");
+    check(nfa.states[1].trans.len == 1 &&
+              nfa.states[1].trans.items[0].type == TR_CAPTURE_END &&
+              nfa.states[1].trans.items[0].group_id == 1,
+          "capture end tag");
+    nfa_free(&nfa);
+}
+
 static void test_state_table(void)
 {
     nfa_t nfa;
@@ -137,6 +156,7 @@ int main(void)
     test_literal();
     test_thompson_shapes();
     test_nfa_execution();
+    test_capture_tags();
     test_state_table();
     if (failures != 0) {
         printf("%d NFA test(s) failed\n", failures);

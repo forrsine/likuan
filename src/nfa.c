@@ -71,11 +71,22 @@ int nfa_add_eps(nfa_t *nfa, int from, int to)
     return nfa_add_transition(nfa, from, to, TR_EPS, NULL);
 }
 
+<<<<<<< Updated upstream
 int nfa_add_save(nfa_t *nfa, int from, int to, trans_type_t type, int save_slot)
 {
     int rc = nfa_add_transition(nfa, from, to, type, NULL);
     if (rc == RX_OK) {
         nfa->states[from].trans.items[nfa->states[from].trans.len - 1].save_slot = save_slot;
+=======
+int nfa_add_capture(nfa_t *nfa, int from, int to, trans_type_t type, size_t group_id)
+{
+    if (type != TR_CAPTURE_BEGIN && type != TR_CAPTURE_END) {
+        return RX_BADPAT;
+    }
+    int rc = nfa_add_transition(nfa, from, to, type, NULL);
+    if (rc == RX_OK) {
+        nfa->states[from].trans.items[nfa->states[from].trans.len - 1].group_id = group_id;
+>>>>>>> Stashed changes
     }
     return rc;
 }
@@ -97,9 +108,15 @@ int nfa_compile_ast(nfa_t *nfa, const ast_node_t *node, frag_t *out)
         if (s < 0 || e < 0) {
             return RX_ESPACE;
         }
+<<<<<<< Updated upstream
         rc = nfa_add_save(nfa, s, inner.start, TR_SAVE_START, (int)node->group_id);
         if (rc == RX_OK) {
             rc = nfa_add_save(nfa, inner.accept, e, TR_SAVE_END, (int)node->group_id);
+=======
+        rc = nfa_add_capture(nfa, s, inner.start, TR_CAPTURE_BEGIN, node->group_id);
+        if (rc == RX_OK) {
+            rc = nfa_add_capture(nfa, inner.accept, e, TR_CAPTURE_END, node->group_id);
+>>>>>>> Stashed changes
         }
         if (rc != RX_OK) {
             return rc;
@@ -339,8 +356,13 @@ const char *nfa_transition_type_name(trans_type_t type)
     case TR_ANY: return "ANY";
     case TR_ANCHOR_BEGIN: return "BEGIN";
     case TR_ANCHOR_END: return "END";
+<<<<<<< Updated upstream
     case TR_SAVE_START: return "SAVE_S";
     case TR_SAVE_END: return "SAVE_E";
+=======
+    case TR_CAPTURE_BEGIN: return "CAP_BEG";
+    case TR_CAPTURE_END: return "CAP_END";
+>>>>>>> Stashed changes
     }
     return "UNKNOWN";
 }
@@ -367,8 +389,15 @@ static void dump_transition_value(const transition_t *transition, FILE *out)
     case TR_ANY: fputc('.', out); break;
     case TR_ANCHOR_BEGIN: fputc('^', out); break;
     case TR_ANCHOR_END: fputc('$', out); break;
+<<<<<<< Updated upstream
     case TR_SAVE_START: fprintf(out, "save_start(%d)", transition->save_slot); break;
     case TR_SAVE_END: fprintf(out, "save_end(%d)", transition->save_slot); break;
+=======
+    case TR_CAPTURE_BEGIN:
+    case TR_CAPTURE_END:
+        fprintf(out, "#%zu", transition->group_id);
+        break;
+>>>>>>> Stashed changes
     }
 }
 

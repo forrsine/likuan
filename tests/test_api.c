@@ -107,6 +107,55 @@ static void expect_dfa_no_result(const char *pattern, const char *text, int sear
     regex_free(re);
 }
 
+static void expect_captures(const char *pattern,
+                            const char *text,
+                            unsigned flags,
+                            int search,
+                            const rx_match_t *expected,
+                            size_t expected_count)
+{
+    rx_regex_t *re = NULL;
+    int rc = regex_compile(&re, pattern, flags);
+    if (rc != RX_OK) {
+        printf("FAIL capture compile /%s/: rc=%d\n", pattern, rc);
+        failures++;
+        return;
+    }
+    if (regex_capture_count(re) + 1 != expected_count) {
+        printf("FAIL capture count /%s/: got=%zu expected=%zu\n",
+               pattern, regex_capture_count(re), expected_count - 1);
+        failures++;
+        regex_free(re);
+        return;
+    }
+
+    rx_match_t actual[8];
+    if (expected_count > sizeof(actual) / sizeof(actual[0])) {
+        printf("FAIL capture test capacity /%s/\n", pattern);
+        failures++;
+        regex_free(re);
+        return;
+    }
+    rc = search ? regex_search(re, text, actual, expected_count)
+                : regex_match(re, text, actual, expected_count);
+    if (rc != RX_OK) {
+        printf("FAIL capture %s /%s/ text='%s': rc=%d\n",
+               search ? "search" : "match", pattern, text, rc);
+        failures++;
+    } else {
+        for (size_t i = 0; i < expected_count; ++i) {
+            if (actual[i].rm_so != expected[i].rm_so ||
+                actual[i].rm_eo != expected[i].rm_eo) {
+                printf("FAIL capture /%s/ group %zu: got=[%d,%d] expected=[%d,%d]\n",
+                       pattern, i, actual[i].rm_so, actual[i].rm_eo,
+                       expected[i].rm_so, expected[i].rm_eo);
+                failures++;
+            }
+        }
+    }
+    regex_free(re);
+}
+
 static void expect_compile_error(const char *pattern)
 {
     rx_regex_t *re = NULL;
@@ -138,11 +187,33 @@ typedef struct {
     size_t count;
 } match_list_t;
 
+typedef struct {
+    rx_match_t overall[4];
+    rx_match_t group[4];
+    size_t count;
+    int invalid_count;
+} capture_list_t;
+
 static int collect_match(const rx_match_t *matches, size_t nmatch, void *userdata)
 {
     match_list_t *list = (match_list_t *)userdata;
     if (nmatch > 0 && list->count < sizeof(list->matches) / sizeof(list->matches[0])) {
         list->matches[list->count++] = matches[0];
+    }
+    return 1;
+}
+
+static int collect_capture_match(const rx_match_t *matches, size_t nmatch, void *userdata)
+{
+    capture_list_t *list = (capture_list_t *)userdata;
+    if (nmatch != 2) {
+        list->invalid_count = 1;
+        return 0;
+    }
+    if (list->count < sizeof(list->overall) / sizeof(list->overall[0])) {
+        list->overall[list->count] = matches[0];
+        list->group[list->count] = matches[1];
+        ++list->count;
     }
     return 1;
 }
@@ -183,6 +254,10 @@ static void expect_findall(const char *pattern,
 
 int main(void)
 {
+    if (regex_capture_count(NULL) != 0) {
+        printf("FAIL null capture count\n");
+        failures++;
+    }
     expect_match("a", "a", 0, 1);
     expect_no_match("a", "b");
     expect_match("ab", "ab", 0, 2);
@@ -227,12 +302,60 @@ int main(void)
     expect_dfa_no_result("^abc", "zabc", 1);
     expect_dfa_no_result("abc$", "abcx", 1);
     {
+        const rx_match_t expected[] = {{0, 3}, {0, 2}, {2, 3}};
+        expect_captures("(ab)(c)", "abc", RX_FLAG_NONE, 0, expected, 3);
+        expect_captures("(ab)(c)", "abc", RX_FLAG_DFA, 0, expected, 3);
+    }
+    {
+        const rx_match_t expected[] = {{0, 2}, {0, 2}, {0, 1}};
+        expect_captures("((a)b)", "ab", RX_FLAG_NONE, 0, expected, 3);
+    }
+    {
+        const rx_match_t expected[] = {{0, 1}, {-1, -1}};
+        expect_captures("(a)?b", "b", RX_FLAG_NONE, 0, expected, 2);
+    }
+    {
+        const rx_match_t expected[] = {{0, 4}, {2, 4}};
+        expect_captures("(ab)+", "abab", RX_FLAG_NONE, 0, expected, 2);
+        expect_captures("(ab)+", "abab", RX_FLAG_DFA, 0, expected, 2);
+    }
+    {
+        const rx_match_t expected[] = {{0, 2}, {0, 2}};
+        expect_captures("(a|aa)", "aa", RX_FLAG_NONE, 0, expected, 2);
+    }
+    {
+        const rx_match_t expected[] = {{2, 8}, {2, 5}, {5, 8}};
+        expect_captures("([a-z]+)(\\d+)", "--abc123!", RX_FLAG_DFA, 1, expected, 3);
+    }
+    {
+        const rx_match_t expected[] = {{0, 0}, {0, 0}};
+        expect_captures("(a*)", "", RX_FLAG_NONE, 0, expected, 2);
+    }
+    {
         const rx_match_t expected[] = {{0, 2}, {3, 5}};
         expect_findall("a{2}", "aabaa", expected, 2, RX_FLAG_NONE);
     }
     {
         const rx_match_t expected[] = {{0, 0}, {1, 1}, {2, 2}, {3, 3}};
         expect_findall("a{0}", "bbb", expected, 4, RX_FLAG_NONE);
+    }
+    {
+        rx_regex_t *re = NULL;
+        capture_list_t list = {{{0, 0}}, {{0, 0}}, 0, 0};
+        int rc = regex_compile(&re, "(a+)", RX_FLAG_DFA);
+        if (rc == RX_OK) {
+            rc = regex_findall(re, "aa_ba", collect_capture_match, &list);
+        }
+        if (rc != RX_OK || list.invalid_count || list.count != 2 ||
+            list.overall[0].rm_so != 0 || list.overall[0].rm_eo != 2 ||
+            list.group[0].rm_so != 0 || list.group[0].rm_eo != 2 ||
+            list.overall[1].rm_so != 4 || list.overall[1].rm_eo != 5 ||
+            list.group[1].rm_so != 4 || list.group[1].rm_eo != 5) {
+            printf("FAIL capture findall: rc=%d count=%zu nmatch_error=%d\n",
+                   rc, list.count, list.invalid_count);
+            failures++;
+        }
+        regex_free(re);
     }
     {
         const rx_match_t expected[] = {{0, 2}, {4, 5}};

@@ -43,6 +43,7 @@ int regex_findall(const rx_regex_t *re,
                   const char *text,
                   int (*on_match)(const rx_match_t *matches, size_t nmatch, void *userdata),
                   void *userdata);
+size_t regex_capture_count(const rx_regex_t *re);
 const char *regex_error(const rx_regex_t *re);
 const char *regex_status_string(int status);
 void regex_free(rx_regex_t *re);

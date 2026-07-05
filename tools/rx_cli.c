@@ -1,6 +1,7 @@
 #include "regex_engine.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int main(int argc, char **argv)
@@ -24,24 +25,43 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    rx_match_t m = {-1, -1};
+    size_t match_count = regex_capture_count(re) + 1;
+    rx_match_t *matches = (rx_match_t *)malloc(match_count * sizeof(*matches));
+    if (matches == NULL) {
+        fprintf(stderr, "out of memory\n");
+        regex_free(re);
+        return 1;
+    }
     const char *text = argv[pattern_arg + 1];
     if (flags == RX_FLAG_DFA) {
         printf("mode: DFA\n");
     }
-    rc = regex_search(re, text, &m, 1);
+    rc = regex_search(re, text, matches, match_count);
     if (rc == RX_OK) {
-        printf("match [%d,%d): ", m.rm_so, m.rm_eo);
-        for (int i = m.rm_so; i < m.rm_eo; ++i) {
+        printf("match [%d,%d): ", matches[0].rm_so, matches[0].rm_eo);
+        for (int i = matches[0].rm_so; i < matches[0].rm_eo; ++i) {
             putchar(text[i]);
         }
         putchar('\n');
+        for (size_t group = 1; group < match_count; ++group) {
+            printf("group %zu [%d,%d): ",
+                   group, matches[group].rm_so, matches[group].rm_eo);
+            if (matches[group].rm_so >= 0) {
+                for (int i = matches[group].rm_so; i < matches[group].rm_eo; ++i) {
+                    putchar(text[i]);
+                }
+            } else {
+                fputs("<unmatched>", stdout);
+            }
+            putchar('\n');
+        }
     } else if (rc == RX_NOMATCH) {
         printf("no match\n");
     } else {
         printf("search failed: rc=%d\n", rc);
     }
 
+    free(matches);
     regex_free(re);
     return rc == RX_OK || rc == RX_NOMATCH ? 0 : 1;
 }

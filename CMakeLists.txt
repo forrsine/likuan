@@ -30,6 +30,7 @@ add_library(regex_engine
     src/capture.c
     src/dfa.c
     src/dfa_minimize.c
+    src/dot.c
     src/regex_engine.c
 )
 target_include_directories(regex_engine PUBLIC include)
@@ -87,6 +88,12 @@ target_link_libraries(test_conformance PRIVATE regex_engine)
 rx_enable_warnings(test_conformance)
 add_test(NAME test_conformance COMMAND test_conformance)
 
+add_executable(test_dot tests/test_dot.c)
+target_include_directories(test_dot PRIVATE src)
+target_link_libraries(test_dot PRIVATE regex_engine)
+rx_enable_warnings(test_dot)
+add_test(NAME test_dot COMMAND test_dot)
+
 if(RX_HAVE_POSIX_REGEX_H)
     add_executable(test_posix tests/test_posix.c)
     target_link_libraries(test_posix PRIVATE regex_engine)
@@ -117,6 +124,11 @@ add_executable(rx_dump_dfa tools/rx_dump_dfa.c)
 target_include_directories(rx_dump_dfa PRIVATE src)
 target_link_libraries(rx_dump_dfa PRIVATE regex_engine)
 rx_enable_warnings(rx_dump_dfa)
+
+add_executable(rx_dump_dot tools/rx_dump_dot.c)
+target_include_directories(rx_dump_dot PRIVATE src)
+target_link_libraries(rx_dump_dot PRIVATE regex_engine)
+rx_enable_warnings(rx_dump_dot)
 
 add_executable(rx_bench tools/rx_bench.c)
 target_link_libraries(rx_bench PRIVATE regex_engine)

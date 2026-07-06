@@ -13,8 +13,8 @@
 - 捕获组：`matches[0]` 为整体，`matches[1..]` 为括号分组，未参与组返回 `[-1,-1]`。
 - DFA 捕获：DFA 定位整体区间，再用带标签 NFA 回填分组。
 - API：`regex_compile`、`regex_compile_ex`、`regex_match`、`regex_search`、`regex_findall`、`regex_capture_count`、`regex_get_stats`、`regex_free`。
-- 工具：CLI、token/AST/NFA/DFA dump、NFA/DFA/POSIX benchmark。
-- 测试：lexer、parser、NFA、DFA、API、压力测试、90 次跨模式符合性执行，以及 Linux 上自动启用的 POSIX 对照测试。
+- 工具：CLI、token/AST/NFA/DFA dump、Graphviz DOT 导出、NFA/DFA/POSIX benchmark。
+- 测试：lexer、parser、NFA、DFA、DOT、API、压力测试、90 次跨模式符合性执行，以及 Linux 上自动启用的 POSIX 对照测试。
 
 区间量词上限为 10000，DFA 状态上限为 4096，括号嵌套上限为 256。
 
@@ -56,6 +56,9 @@ valgrind --leak-check=full --error-exitcode=1 ./build/test_stress
 ./build/rx_dump_ast "([a-z]+)\\d{2,4}"
 ./build/rx_dump_nfa "(a|b)*"
 ./build/rx_dump_dfa "^abc$"
+./build/rx_dump_dot --nfa --output nfa.dot "([a-z]+)\\d{2,4}"
+./build/rx_dump_dot --dfa --output mindfa.dot "([a-z]+)\\d{2,4}"
+dot -Tpng mindfa.dot -o mindfa.png
 ```
 
 ## 性能对比
@@ -87,5 +90,5 @@ cmake --build build-release -j
 ## 下一阶段
 
 - 在 WSL/Linux Release 环境采集正式性能数据并生成对比表。
-- 实现 NFA/DFA DOT 导出。
+- 在安装 Graphviz 的环境渲染并检查 DOT 示例 PNG。
 - 整理最终实验报告、AI 对话记录和答辩演示材料。

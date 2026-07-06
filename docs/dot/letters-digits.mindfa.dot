@@ -1,0 +1,26 @@
+digraph MinDFA {
+  rankdir=LR;
+  graph [bgcolor="white", pad="0.2"];
+  node [shape=circle, fontname="Consolas", fontsize=10];
+  edge [fontname="Consolas", fontsize=9];
+  start_mid [shape=plaintext, label="mid"];
+  start_mid -> q0;
+  start_begin [shape=plaintext, label="begin"];
+  start_begin -> q0;
+  start_end [shape=plaintext, label="end"];
+  start_end -> q0;
+  start_empty [shape=plaintext, label="begin+end"];
+  start_empty -> q0;
+  q0 [label="0"];
+  q1 [label="1"];
+  q2 [label="2"];
+  q3 [label="3", shape=doublecircle];
+  q4 [label="4", shape=doublecircle];
+  q5 [label="5", shape=doublecircle];
+  q0 -> q1 [label="[a-z]"];
+  q1 -> q1 [label="[a-z]"];
+  q1 -> q2 [label="[0-9]"];
+  q2 -> q3 [label="[0-9]"];
+  q3 -> q4 [label="[0-9]"];
+  q4 -> q5 [label="[0-9]"];
+}

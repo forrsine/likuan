@@ -14,7 +14,7 @@
 - DFA 捕获：DFA 定位整体区间，再用带标签 NFA 回填分组。
 - API：`regex_compile`、`regex_compile_ex`、`regex_match`、`regex_search`、`regex_findall`、`regex_capture_count`、`regex_get_stats`、`regex_free`。
 - 工具：CLI、token/AST/NFA/DFA dump、NFA/DFA/POSIX benchmark。
-- 测试：lexer、parser、NFA、DFA、API、压力测试，以及 Linux 上自动启用的 POSIX 对照测试。
+- 测试：lexer、parser、NFA、DFA、API、压力测试、90 次跨模式符合性执行，以及 Linux 上自动启用的 POSIX 对照测试。
 
 区间量词上限为 10000，DFA 状态上限为 4096，括号嵌套上限为 256。
 
@@ -66,6 +66,13 @@ Release 模式运行内置基准：
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release -j
 ./build-release/rx_bench --iterations 100000 --compare-posix
+```
+
+保存为 CSV：
+
+```bash
+./build-release/rx_bench --iterations 100000 --compare-posix \
+  --csv docs/performance.csv
 ```
 
 自定义模式和文本：

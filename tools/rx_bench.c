@@ -142,9 +142,35 @@ static void print_engine_result(const char *name,
            result->stats.dfa_character_classes);
 }
 
+static void write_engine_csv(FILE *csv,
+                             const char *name,
+                             const char *mode,
+                             size_t iterations,
+                             double compile_us,
+                             double match_us,
+                             const rx_regex_stats_t *stats,
+                             double speed_vs_nfa)
+{
+    if (csv == NULL) {
+        return;
+    }
+    fprintf(csv, "%s,%s,%zu,%.6f,%.6f,%zu,%zu,%zu,%zu,%.2f\n",
+            name,
+            mode,
+            iterations,
+            compile_us,
+            match_us,
+            stats != NULL ? stats->nfa_states : 0,
+            stats != NULL ? stats->dfa_subset_states : 0,
+            stats != NULL ? stats->dfa_states : 0,
+            stats != NULL ? stats->dfa_character_classes : 0,
+            speed_vs_nfa);
+}
+
 static int run_case(const bench_case_t *bench,
                     size_t iterations,
-                    int compare_posix)
+                    int compare_posix,
+                    FILE *csv)
 {
     engine_result_t nfa = {0};
     engine_result_t dfa = {0};
@@ -162,6 +188,17 @@ static int run_case(const bench_case_t *bench,
     }
     print_engine_result(bench->name, "NFA", &nfa);
     print_engine_result(bench->name, "DFA", &dfa);
+    double dfa_speed_vs_nfa =
+        dfa.match_us > 0.0 ? nfa.match_us / dfa.match_us * 100.0 : 0.0;
+    if (nfa.match_us > 0.0 && dfa.match_us > 0.0) {
+        printf("  DFA/NFA matching speed: %.1f%%\n", dfa_speed_vs_nfa);
+    } else {
+        puts("  Matching interval is below timer resolution; increase --iterations.");
+    }
+    write_engine_csv(csv, bench->name, "NFA", iterations,
+                     nfa.compile_us, nfa.match_us, &nfa.stats, 100.0);
+    write_engine_csv(csv, bench->name, "DFA", iterations,
+                     dfa.compile_us, dfa.match_us, &dfa.stats, dfa_speed_vs_nfa);
 
 #if RX_HAVE_POSIX_REGEX
     if (compare_posix) {
@@ -177,6 +214,9 @@ static int run_case(const bench_case_t *bench,
         printf("%-14s %-6s %10.3f %10.3f %7s %7s %7s %7s\n",
                bench->name, "POSIX", compile_us, match_us,
                "-", "-", "-", "-");
+        write_engine_csv(csv, bench->name, "POSIX", iterations,
+                         compile_us, match_us, NULL,
+                         match_us > 0.0 ? nfa.match_us / match_us * 100.0 : 0.0);
         if (dfa.match_us > 0.0) {
             printf("  DFA/POSIX matching speed: %.1f%%\n",
                    match_us / dfa.match_us * 100.0);
@@ -194,7 +234,8 @@ static int run_case(const bench_case_t *bench,
 static void usage(const char *program)
 {
     fprintf(stderr,
-            "usage: %s [--iterations N] [--compare-posix] [PATTERN TEXT]\n",
+            "usage: %s [--iterations N] [--compare-posix] [--csv FILE] "
+            "[PATTERN TEXT]\n",
             program);
 }
 
@@ -202,11 +243,14 @@ int main(int argc, char **argv)
 {
     size_t iterations = 20000;
     int compare_posix = 0;
+    const char *csv_path = NULL;
     const char *pattern = NULL;
     const char *text = NULL;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--compare-posix") == 0) {
             compare_posix = 1;
+        } else if (strcmp(argv[i], "--csv") == 0 && i + 1 < argc) {
+            csv_path = argv[++i];
         } else if (strcmp(argv[i], "--iterations") == 0 && i + 1 < argc) {
             char *end = NULL;
             unsigned long value = strtoul(argv[++i], &end, 10);
@@ -236,6 +280,24 @@ int main(int argc, char **argv)
         {"identifier", "[A-Za-z_][A-Za-z0-9_]*", "value_12345"}
     };
 
+    FILE *csv = NULL;
+    if (csv_path != NULL) {
+#ifdef _MSC_VER
+        if (fopen_s(&csv, csv_path, "w") != 0) {
+            csv = NULL;
+        }
+#else
+        csv = fopen(csv_path, "w");
+#endif
+        if (csv == NULL) {
+            fprintf(stderr, "cannot open CSV output: %s\n", csv_path);
+            return 1;
+        }
+        fputs("case,mode,iterations,compile_us,match_us,nfa_states,"
+              "subset_states,mindfa_states,classes,speed_vs_nfa_percent\n",
+              csv);
+    }
+
     printf("iterations=%zu\n", iterations);
     printf("%-14s %-6s %10s %10s %7s %7s %7s %7s\n",
            "case", "mode", "compile_us", "match_us",
@@ -245,12 +307,21 @@ int main(int argc, char **argv)
         custom.name = "custom";
         custom.pattern = pattern;
         custom.text = text;
-        return run_case(&custom, iterations, compare_posix);
+        int rc = run_case(&custom, iterations, compare_posix, csv);
+        if (csv != NULL) {
+            fclose(csv);
+        }
+        return rc;
     }
+    int result = 0;
     for (size_t i = 0; i < sizeof(builtins) / sizeof(builtins[0]); ++i) {
-        if (run_case(&builtins[i], iterations, compare_posix) != 0) {
-            return 1;
+        if (run_case(&builtins[i], iterations, compare_posix, csv) != 0) {
+            result = 1;
+            break;
         }
     }
-    return 0;
+    if (csv != NULL) {
+        fclose(csv);
+    }
+    return result;
 }

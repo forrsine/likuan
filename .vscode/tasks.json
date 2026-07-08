@@ -1,0 +1,27 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "C:/Program Files/mingw64/bin/mingw32-make.exe",
+            "args": [],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "CMake: configure",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["-G", "MinGW Makefiles", "-S", "${workspaceFolder}", "-B", "${workspaceFolder}/build"],
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

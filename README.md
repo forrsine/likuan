@@ -20,6 +20,31 @@
 
 ## 构建与测试
 
+### 当前 Windows 环境
+
+本机已带 Scope MSVC，可直接在项目根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-msvc.ps1 -Test
+```
+
+该命令会把 8 个测试和 7 个工具构建到 `build-manual`，随后运行全部测试。只构建不测试：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-msvc.ps1
+```
+
+构建 Release 版本用于性能测试：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-msvc.ps1 -Configuration Release
+.\build-manual\rx_bench.exe --iterations 100000
+```
+
+VS Code 中按 `Ctrl+Shift+B` 会执行默认的 `build and test` 任务；调试菜单可直接启动 `rx_cli`、`test_api` 或 `test_conformance`。
+
+### WSL2/Linux 环境
+
 推荐使用 WSL2 Ubuntu：
 
 ```bash
@@ -49,6 +74,16 @@ valgrind --leak-check=full --error-exitcode=1 ./build/test_stress
 ```
 
 ## 使用示例
+
+Windows PowerShell：
+
+```powershell
+.\build-manual\rx_cli.exe --dfa '([a-z]+)(\d+)' '--abc123!'
+.\build-manual\rx_dump_dfa.exe 'a|b'
+.\build-manual\rx_dump_dot.exe --dfa --output mindfa.dot '^abc$'
+```
+
+WSL/Linux：
 
 ```bash
 ./build/rx_cli --dfa "([a-z]+)(\\d+)" "--abc123!"

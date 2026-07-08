@@ -1,5 +1,6 @@
 build*/
 .cache/
+.vs/
 out/
 *.exe
 *.obj
@@ -7,4 +8,3 @@ out/
 *.ilk
 *.user
 ~$*.docx
-

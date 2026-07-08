@@ -3,34 +3,58 @@
     "tasks": [
         {
             "label": "build",
-            "type": "shell",
-            "command": "&",
+            "type": "process",
+            "command": "powershell.exe",
             "args": [
-                "C:/Program Files/mingw64/bin/mingw32-make.exe"
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/scripts/build-msvc.ps1"
             ],
             "options": {
-                "cwd": "${workspaceFolder}/build"
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build and test",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/scripts/build-msvc.ps1",
+                "-Test"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
             },
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
-            "problemMatcher": "$gcc"
+            "problemMatcher": "$msCompile"
         },
         {
-            "label": "CMake: configure",
-            "type": "shell",
-            "command": "cmake",
+            "label": "release benchmark build",
+            "type": "process",
+            "command": "powershell.exe",
             "args": [
-                "-G",
-                "MinGW Makefiles",
-                "-S",
-                "${workspaceFolder}",
-                "-B",
-                "${workspaceFolder}/build"
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/scripts/build-msvc.ps1",
+                "-Configuration",
+                "Release"
             ],
-            "group": "build",
-            "problemMatcher": []
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$msCompile"
         }
     ]
 }

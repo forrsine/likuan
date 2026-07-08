@@ -3,32 +3,29 @@
     "configurations": [
         {
             "name": "Debug rx_cli",
-            "type": "cppdbg",
+            "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/rx_cli.exe",
-            "args": ["(a|b)*c", "ababc"],
-            "cwd": "${workspaceFolder}/build",
-            "miDebuggerPath": "C:/Program Files/mingw64/bin/gdb.exe",
+            "program": "${workspaceFolder}/build-manual/rx_cli.exe",
+            "args": ["--dfa", "(a|b)*c", "ababc"],
+            "cwd": "${workspaceFolder}",
             "preLaunchTask": "build"
         },
         {
             "name": "Debug test_api",
-            "type": "cppdbg",
+            "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/test_api.exe",
+            "program": "${workspaceFolder}/build-manual/test_api.exe",
             "args": [],
-            "cwd": "${workspaceFolder}/build",
-            "miDebuggerPath": "C:/Program Files/mingw64/bin/gdb.exe",
+            "cwd": "${workspaceFolder}",
             "preLaunchTask": "build"
         },
         {
             "name": "Debug test_conformance",
-            "type": "cppdbg",
+            "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/test_conformance.exe",
+            "program": "${workspaceFolder}/build-manual/test_conformance.exe",
             "args": [],
-            "cwd": "${workspaceFolder}/build",
-            "miDebuggerPath": "C:/Program Files/mingw64/bin/gdb.exe",
+            "cwd": "${workspaceFolder}",
             "preLaunchTask": "build"
         }
     ]

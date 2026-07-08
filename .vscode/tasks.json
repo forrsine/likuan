@@ -4,8 +4,10 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "C:/Program Files/mingw64/bin/mingw32-make.exe",
-            "args": [],
+            "command": "&",
+            "args": [
+                "C:/Program Files/mingw64/bin/mingw32-make.exe"
+            ],
             "options": {
                 "cwd": "${workspaceFolder}/build"
             },
@@ -19,7 +21,14 @@
             "label": "CMake: configure",
             "type": "shell",
             "command": "cmake",
-            "args": ["-G", "MinGW Makefiles", "-S", "${workspaceFolder}", "-B", "${workspaceFolder}/build"],
+            "args": [
+                "-G",
+                "MinGW Makefiles",
+                "-S",
+                "${workspaceFolder}",
+                "-B",
+                "${workspaceFolder}/build"
+            ],
             "group": "build",
             "problemMatcher": []
         }

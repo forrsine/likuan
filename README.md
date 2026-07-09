@@ -43,6 +43,20 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-msvc.ps1 -Configuration
 
 VS Code 中按 `Ctrl+Shift+B` 会执行默认的 `build and test` 任务；调试菜单可直接启动 `rx_cli`、`test_api` 或 `test_conformance`。
 
+## 一键演示
+
+第 13 天已补充演示脚本，汇报时可在项目根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\demo.ps1
+```
+
+脚本会构建 Release 版本，依次演示 DFA 捕获组、token、AST、NFA、MinDFA、DOT 导出和 benchmark，并把演示产物放到 `out/demo`。如果汇报前想同时跑完整回归测试：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\demo.ps1 -RunTests
+```
+
 ### WSL2/Linux 环境
 
 推荐使用 WSL2 Ubuntu：
